@@ -169,7 +169,6 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 	}
 
 	for _, chapter := range novel.Chapters {
-		log.Println("Queueing Chapter: ", chapter.Title)
 		if err := w.EnqueueChapter(chapter.URL, novel.ID, chapter.Title, chapter.Number); err != nil {
 			log.Printf("Error enqueuing chapter: %v", err)
 		}
@@ -284,6 +283,8 @@ func (w *Worker) processChapter(jobData string) error {
 	if err := json.Unmarshal([]byte(jobData), &chapterJob); err != nil {
 		return fmt.Errorf("unmarshalling chapter job: %w", err)
 	}
+
+	log.Printf("Crawling chapter: %s (NovelID: %d, Number: %d)", chapterJob.Title, chapterJob.NovelID, chapterJob.Number)
 
 	chapter, err := w.Crawler.CrawlChapter(chapterJob.URL, chapterJob.Title, chapterJob.Number)
 	if err != nil {
@@ -472,6 +473,7 @@ func (w *Worker) EnqueueChapter(url string, novelID uint, title string, number i
 	if err != nil {
 		return fmt.Errorf("marshalling chapter job: %w", err)
 	}
+	log.Println("Enqueueing Chapter: ", title)
 	return w.enqueue(chapterQueueKey, string(job))
 }
 
