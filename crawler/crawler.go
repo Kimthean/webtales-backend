@@ -160,6 +160,14 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 			})
 		})
 
+		collector.OnError(func(r *colly.Response, err error) {
+			log.Printf("Error visiting page: %s, error: %v", r.Request.URL, err)
+		})
+
+		collector.OnRequest(func(r *colly.Request) {
+			log.Printf("Visiting URL: %s", r.URL)
+		})
+
 		err := collector.Visit(url)
 		if err != nil {
 			return nil, fmt.Errorf("visiting novel page: %w", err)
