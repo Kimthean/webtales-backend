@@ -1,9 +1,11 @@
 package crawler
 
 import (
+	"crypto/tls"
 	"fmt"
 	"go-novel/models"
 	"log"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -34,6 +36,15 @@ func (c *Crawler) newCollector() *colly.Collector {
 		DomainGlob:  "*wuxiabox.com*",
 		RandomDelay: 5 * time.Second,
 	})
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	httpClient := &http.Client{
+		Transport: transport,
+	}
+
+	collector.WithTransport(httpClient.Transport)
 
 	collector.OnRequest(func(r *colly.Request) {
 		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
