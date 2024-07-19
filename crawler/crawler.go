@@ -112,6 +112,8 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 		collector.OnHTML(".readbtn .chapterlist", func(e *colly.HTMLElement) {
 			chapterListURL := e.Request.AbsoluteURL(e.Attr("href"))
 			chapter, err := c.extractChapters(chapterListURL)
+			log.Println("Chapter List URL: ", chapterListURL)
+			log.Println("Chapters: ", chapter)
 			if err != nil {
 				log.Printf("Error extracting chapters: %s", err)
 			}
