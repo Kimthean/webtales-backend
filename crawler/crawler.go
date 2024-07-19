@@ -74,6 +74,7 @@ func RandomUserAgent() string {
 }
 
 func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
+	log.Printf("Crawling novel from %s", url)
 
 	var novel *models.Novel
 
@@ -81,50 +82,33 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 		novel = &models.Novel{URL: &url}
 		collector := c.newCollector()
 
-		collector.SetRequestTimeout(60 * time.Second)
-
-		log.Println("Crawling novel from 9999txt.cc")
-
 		collector.OnHTML("#info h1", func(e *colly.HTMLElement) {
 			title := e.Text
-			log.Println("Title: ", title)
 			novel.Title = &title
 		})
 
 		collector.OnHTML("#fmimg img", func(e *colly.HTMLElement) {
 			imageURL := e.Attr("data-original")
-			log.Println("Thumbnail: ", imageURL)
 			novel.Thumbnail = &imageURL
 		})
 
 		collector.OnHTML("#info > p:first-of-type a", func(e *colly.HTMLElement) {
 			author := e.Text
-			log.Println("Author: ", author)
 			novel.Author = &author
 		})
 
 		collector.OnHTML("#intro", func(e *colly.HTMLElement) {
 			introDescription := e.Text
-			log.Println("Description: ", introDescription)
 			novel.Description = &introDescription
 		})
 
 		collector.OnHTML(".readbtn .chapterlist", func(e *colly.HTMLElement) {
 			chapterListURL := e.Request.AbsoluteURL(e.Attr("href"))
 			chapter, err := c.extractChapters(chapterListURL)
-			log.Println("Chapter List URL: ", chapterListURL)
-			log.Println("Chapters: ", chapter)
 			if err != nil {
 				log.Printf("Error extracting chapters: %s", err)
 			}
 			novel.Chapters = chapter
-		})
-
-		collector.OnError(func(r *colly.Response, err error) {
-			log.Printf("Error visiting page: %s, error: %v", r.Request.URL, err)
-		})
-		collector.OnRequest(func(r *colly.Request) {
-			log.Printf("Visiting URL: %s", r.URL)
 		})
 
 		err := collector.Visit(url)
@@ -174,14 +158,6 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 				Title:  chapterTitle,
 				Number: chapterCounter,
 			})
-		})
-
-		collector.OnError(func(r *colly.Response, err error) {
-			log.Printf("Error visiting page: %s, error: %v", r.Request.URL, err)
-		})
-
-		collector.OnRequest(func(r *colly.Request) {
-			log.Printf("Visiting URL: %s", r.URL)
 		})
 
 		err := collector.Visit(url)

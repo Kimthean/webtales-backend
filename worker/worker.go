@@ -135,11 +135,15 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		return w.enqueueNovelForRetry(novelJob)
 	}
 
+	log.Printf("Crawling novel: %s", novelJob.URL)
 	novel, err := w.Crawler.CrawlNovel(novelJob.URL)
 	if err != nil {
 		log.Printf("Error crawling novel: %v", err)
 		return w.enqueueNovelForRetry(novelJob)
 	}
+	log.Printf("Crawled novel: %s", *novel.Title)
+	log.Printf("Saving novel: %s", *novel.Description)
+	log.Printf("Saving novel: %s", *novel.Author)
 
 	translateTitle := *w.translateAsync(*novel.Title)
 	translateAuthor := *w.translateAsync(*novel.Author)
