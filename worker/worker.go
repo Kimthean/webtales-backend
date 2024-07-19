@@ -91,6 +91,10 @@ func (w *Worker) Start(ctx context.Context) {
 		log.Fatal("Semaphore is nil. Worker not properly initialized.")
 	}
 
+	if w.Redis == nil {
+		log.Fatal("Redis client is nil. Worker not properly initialized.")
+	}
+
 	go w.processQueue(ctx, novelQueueKey, w.processNovel)
 	go w.processChapters(ctx)
 	go w.processRetryQueue(ctx)
