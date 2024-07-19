@@ -150,9 +150,22 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		log.Println("Queueing Chapter: ", chapter.Title)
 	}
 
-	translateTitle, _ := lib.Translate(*novel.Title)
-	translateAuthor, _ := lib.Translate(*novel.Author)
-	translateDescription, _ := lib.Translate(*novel.Description)
+	translateTitle, err := lib.Translate(*novel.Title)
+	if err != nil {
+		log.Printf("Error translating novel: %v", err)
+		return w.enqueueNovelForRetry(novelJob)
+	}
+	translateAuthor, err := lib.Translate(*novel.Author)
+	if err != nil {
+		log.Printf("Error translating novel: %v", err)
+		return w.enqueueNovelForRetry(novelJob)
+	}
+	translateDescription, err := lib.Translate(*novel.Description)
+
+	if err != nil {
+		log.Printf("Error translating novel: %v", err)
+		return w.enqueueNovelForRetry(novelJob)
+	}
 
 	novel.RawTitle = novel.Title
 	novel.Title = translateTitle
@@ -473,7 +486,6 @@ func (w *Worker) EnqueueChapter(url string, novelID uint, title string, number i
 	if err != nil {
 		return fmt.Errorf("marshalling chapter job: %w", err)
 	}
-	log.Println("Enqueueing Chapter: ", title)
 	return w.enqueue(chapterQueueKey, string(job))
 }
 
@@ -541,19 +553,19 @@ func (w *Worker) enqueue(queueKey string, value string) error {
 	return nil
 }
 
-func (w *Worker) translateAsync(content string) *string {
-	resultChan := make(chan string, 1)
+// func (w *Worker) translateAsync(content string) *string {
+// 	resultChan := make(chan string, 1)
 
-	go func() {
-		translated, err := lib.Translate(content)
-		if err != nil {
-			resultChan <- ""
-		} else {
-			resultChan <- *translated
-		}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		translated, err := lib.Translate(content)
+// 		if err != nil {
+// 			resultChan <- ""
+// 		} else {
+// 			resultChan <- *translated
+// 		}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	return &result
-}
+// 	result := <-resultChan
+// 	return &result
+// }
