@@ -74,7 +74,6 @@ func RandomUserAgent() string {
 }
 
 func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
-	log.Printf("Crawling novel from %s", url)
 
 	var novel *models.Novel
 
@@ -82,15 +81,19 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 		novel = &models.Novel{URL: &url}
 		collector := c.newCollector()
 
+		log.Println("Crawling novel from 9999txt.cc")
+
 		collector.OnHTML("#info h1", func(e *colly.HTMLElement) {
 			title := e.Text
 			novel.Title = &title
 		})
+		log.Println("Title: ", novel.Title)
 
 		collector.OnHTML("#fmimg img", func(e *colly.HTMLElement) {
 			imageURL := e.Attr("data-original")
 			novel.Thumbnail = &imageURL
 		})
+		log.Println("Thumbnail: ", novel.Thumbnail)
 
 		collector.OnHTML("#info > p:first-of-type a", func(e *colly.HTMLElement) {
 			author := e.Text
