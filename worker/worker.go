@@ -23,7 +23,7 @@ const (
 	retryQueueKey       = "retry_queue"
 	translationQueueKey = "translation_queue"
 	maxRetries          = 5
-	maxConcurrent       = 5
+	maxConcurrent       = 20
 )
 
 type Worker struct {
