@@ -85,10 +85,28 @@ func (h *NovelHandler) GetLatestNovels(c echo.Context) error {
 	return c.JSON(http.StatusOK, novels)
 }
 
-func (h *NovelHandler) GetNovelChapters(c echo.Context) error {
+func (h *NovelHandler) GetNovelChapters (c echo.Context) error {
+	id := c.Param("id")
+
+	var chapterResponses []ChapterResponse
+	if err := h.DB.Table("chapters").
+			Select("id, number, updated_at, translated_title, translation_status").
+			Where("novel_id = ?", id).
+			Order("number ASC").
+			Scan(&chapterResponses).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return echo.NewHTTPError(http.StatusNotFound, "Novel not found")
+			}
+		return err
+	}
+
+	return c.JSON(http.StatusOK, chapterResponses)
+}
+
+func (h *NovelHandler) GetNovelChaptersWithPage(c echo.Context) error {
     id := c.Param("id")
 
-    var page, pageSize int = 1, 20 
+    var page, pageSize int = 1, 20
     var err error
 
     if qp := c.QueryParam("page"); qp != "" {
