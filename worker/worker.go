@@ -98,10 +98,6 @@ func (w *Worker) Start(ctx context.Context) {
 }
 
 func (w *Worker) processQueue(ctx context.Context, queueKey string, processor func(context.Context, string) error) {
-
-	if w.semaphore == nil {
-		log.Fatal("Semaphore is nil. Worker not properly initialized.")
-	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -145,26 +141,14 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		return w.enqueueNovelForRetry(novelJob)
 	}
 
-	isWuxiabox := strings.Contains(novelJob.URL, "wuxiabox.com")
+	translateTitle := *w.translateAsync(*novel.Title)
+	translateAuthor := *w.translateAsync(*novel.Author)
+	translateDescription := *w.translateAsync(*novel.Description)
 
-	if isWuxiabox {
-		// For wuxiabox, don't translate - use original values
-		novel.RawTitle = novel.RawTitle
-		// Assuming Title, Author, and Description are pointers
-		novel.Title = novel.Title
-		novel.Author = novel.Author
-		novel.Description = novel.Description
-	} else {
-		// For non-wuxiabox, translate as before
-		translateTitle := *w.translateAsync(*novel.Title)
-		translateAuthor := *w.translateAsync(*novel.Author)
-		translateDescription := *w.translateAsync(*novel.Description)
-
-		novel.RawTitle = novel.Title
-		novel.Title = &translateTitle
-		novel.Author = &translateAuthor
-		novel.Description = &translateDescription
-	}
+	novel.RawTitle = novel.Title
+	novel.Title = &translateTitle
+	novel.Author = &translateAuthor
+	novel.Description = &translateDescription
 
 	if err := w.DB.Create(novel).Error; err != nil {
 		log.Printf("Error saving novel: %v", err)
@@ -288,9 +272,6 @@ func (w *Worker) processChapter(jobData string) error {
 		return fmt.Errorf("unmarshalling chapter job: %w", err)
 	}
 
-	var existingChapter models.Chapter
-	result := w.DB.Where("novel_id = ? AND number = ?", chapterJob.NovelID, chapterJob.Number).First(&existingChapter)
-
 	chapter, err := w.Crawler.CrawlChapter(chapterJob.URL, chapterJob.Title, chapterJob.Number)
 	if err != nil {
 		log.Printf("Error crawling chapter %s: %v", chapterJob.Title, err)
@@ -305,12 +286,12 @@ func (w *Worker) processChapter(jobData string) error {
 
 	chapter.NovelID = chapterJob.NovelID
 
-	result = w.DB.Where("novel_id = ? AND number = ?", chapter.NovelID, chapter.Number).First(&existingChapter)
+	var existingChapter models.Chapter
+	result := w.DB.Where("novel_id = ? AND number = ?", chapter.NovelID, chapter.Number).First(&existingChapter)
 
 	isWuxiabox := strings.Contains(chapterJob.URL, "wuxiabox.com")
 
 	if result.Error == nil {
-
 		existingChapter.Title = chapter.Title
 		existingChapter.Content = chapter.Content
 		existingChapter.URL = chapter.URL
@@ -327,7 +308,6 @@ func (w *Worker) processChapter(jobData string) error {
 		}
 		log.Printf("Updated existing chapter: %s (NovelID: %d, Number: %d)", chapter.Title, chapter.NovelID, chapter.Number)
 
-		// Enqueue for translation only if not wuxiabox and not already translated
 		if !isWuxiabox {
 			if existingChapter.TranslatedTitle == nil {
 				w.enqueueTranslation(existingChapter.ID, "title", existingChapter.Title)
@@ -335,26 +315,6 @@ func (w *Worker) processChapter(jobData string) error {
 			if existingChapter.TranslatedContent == nil || *existingChapter.TranslatedContent == "" {
 				w.enqueueTranslation(existingChapter.ID, "content", *existingChapter.Content)
 			}
-		}
-	} else if result.Error == gorm.ErrRecordNotFound {
-		// Create new chapter
-		if isWuxiabox {
-			// For wuxiabox, set translated fields directly
-			chapter.TranslatedTitle = &chapter.Title
-			chapter.TranslatedContent = chapter.Content
-			chapter.TranslationStatus = "completed"
-		}
-
-		if err := w.DB.Create(chapter).Error; err != nil {
-			log.Printf("Error saving new chapter %s: %v", chapter.Title, err)
-			return w.enqueueForRetry(chapterJob)
-		}
-		log.Printf("Created new chapter: %s (NovelID: %d, Number: %d)", chapter.Title, chapter.NovelID, chapter.Number)
-
-		// Enqueue new chapter for translation only if not wuxiabox
-		if !isWuxiabox {
-			w.enqueueTranslation(chapter.ID, "title", chapter.Title)
-			w.enqueueTranslation(chapter.ID, "content", *chapter.Content)
 		}
 	} else {
 		log.Printf("Database error while checking for existing chapter %s: %v", chapter.Title, result.Error)
@@ -401,8 +361,6 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 
 			// time.Sleep(1 * time.Second)
 
-			log.Println("Translating: ", job.ChapterID, job.Field)
-
 			translated, err := lib.Translate(job.Text)
 			if err != nil {
 				log.Printf("Error translating text for chapter %d, field %s: %v", job.ChapterID, job.Field, err)
@@ -439,7 +397,6 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 				log.Printf("Unknown field for translation: %s", job.Field)
 				continue
 			}
-			log.Println("Translated: ", *translated)
 
 			if chapter.TranslatedTitle != nil && chapter.TranslatedContent != nil {
 				chapter.TranslationStatus = "completed"
