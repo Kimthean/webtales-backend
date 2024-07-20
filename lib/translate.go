@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -21,10 +22,9 @@ func Translate(text string) (result *string, err error) {
 		}
 
 		chunk := string(runes[i:end])
-		translated, translateErr := translateWithTimeout(chunk)
+		translated, translateErr := translateWithRetry(chunk, 3)
 		if translateErr != nil {
-			// Log the error but continue with the original chunk
-			fmt.Printf("Error translating chunk: %v\n", translateErr)
+			log.Printf("Error translating chunk: %v", translateErr)
 			resultBuilder.WriteString(chunk)
 		} else {
 			resultBuilder.WriteString(translated)
@@ -65,4 +65,16 @@ func translateWithTimeout(chunk string) (string, error) {
 	case <-ctx.Done():
 		return "", fmt.Errorf("translation timed out")
 	}
+}
+
+func translateWithRetry(chunk string, maxRetries int) (string, error) {
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		translated, err := translateWithTimeout(chunk)
+		if err == nil {
+			return translated, nil
+		}
+		log.Printf("Translation attempt %d failed: %v", attempt+1, err)
+		time.Sleep(time.Duration(attempt+1) * time.Second)
+	}
+	return chunk, fmt.Errorf("all translation attempts failed")
 }
