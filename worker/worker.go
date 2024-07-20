@@ -146,13 +146,22 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		return w.enqueueNovelForRetry(novelJob)
 	}
 
-	for _, chapter := range novel.Chapters {
-		log.Println("Queueing Chapter: ", chapter.Title)
+	log.Printf("Total chapters to queue: %d", len(novel.Chapters))
+
+	log.Println("Pinging Redis...")
+	pong, err := w.Redis.Ping(context.Background()).Result()
+	if err != nil {
+		log.Printf("Redis ping failed: %v", err)
+	} else {
+		log.Printf("Redis ping successful: %s", pong)
 	}
 
 	translateTitle := *w.translateAsync(*novel.Title)
+	log.Printf("Translated Title: %s", translateTitle)
 	translateAuthor := *w.translateAsync(*novel.Author)
+	log.Printf("Translated Author: %s", translateAuthor)
 	translateDescription := *w.translateAsync(*novel.Description)
+	log.Printf("Translated Description: %s", translateDescription)
 
 	novel.RawTitle = novel.Title
 	novel.Title = &translateTitle
