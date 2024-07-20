@@ -150,42 +150,37 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		log.Println("Queueing Chapter: ", chapter.Title)
 	}
 
-	translateTitle, err := lib.Translate(*novel.Title)
-	if err != nil {
-		log.Printf("Error translating novel: %v", err)
-		return w.enqueueNovelForRetry(novelJob)
-	}
-	translateAuthor, err := lib.Translate(*novel.Author)
-	if err != nil {
-		log.Printf("Error translating novel: %v", err)
-		return w.enqueueNovelForRetry(novelJob)
-	}
-	translateDescription, err := lib.Translate(*novel.Description)
-
-	if err != nil {
-		log.Printf("Error translating novel: %v", err)
-		return w.enqueueNovelForRetry(novelJob)
-	}
+	translateTitle := *w.translateAsync(*novel.Title)
+	translateAuthor := *w.translateAsync(*novel.Author)
+	translateDescription := *w.translateAsync(*novel.Description)
 
 	novel.RawTitle = novel.Title
-	novel.Title = translateTitle
-	novel.Author = translateAuthor
-	novel.Description = translateDescription
+	novel.Title = &translateTitle
+	novel.Author = &translateAuthor
+	novel.Description = &translateDescription
 
 	log.Printf("Crawled novel: %s", *novel.Title)
 	log.Printf("Crawled novel author: %s", *novel.Author)
 	log.Printf("Crawled novel description: %s", *novel.Description)
 
+	log.Println("Attempting to save novel to database...")
 	if err := w.DB.Create(novel).Error; err != nil {
 		log.Printf("Error saving novel: %v", err)
 		return w.enqueueNovelForRetry(novelJob)
 	}
+	log.Println("Novel saved successfully to database")
 
-	for _, chapter := range novel.Chapters {
+	log.Printf("Enqueueing %d chapters...", len(novel.Chapters))
+	for i, chapter := range novel.Chapters {
 		if err := w.EnqueueChapter(chapter.URL, novel.ID, chapter.Title, chapter.Number); err != nil {
-			log.Printf("Error enqueuing chapter: %v", err)
+			log.Printf("Error enqueuing chapter %d: %v", i, err)
+		} else {
+			log.Printf("Chapter %d enqueued successfully", i)
 		}
 	}
+	log.Println("All chapters enqueued")
+
+	log.Println("Novel processing completed successfully")
 
 	return nil
 }
@@ -553,19 +548,19 @@ func (w *Worker) enqueue(queueKey string, value string) error {
 	return nil
 }
 
-// func (w *Worker) translateAsync(content string) *string {
-// 	resultChan := make(chan string, 1)
+func (w *Worker) translateAsync(content string) *string {
+	resultChan := make(chan string, 1)
 
-// 	go func() {
-// 		translated, err := lib.Translate(content)
-// 		if err != nil {
-// 			resultChan <- ""
-// 		} else {
-// 			resultChan <- *translated
-// 		}
-// 		close(resultChan)
-// 	}()
+	go func() {
+		translated, err := lib.Translate(content)
+		if err != nil {
+			resultChan <- ""
+		} else {
+			resultChan <- *translated
+		}
+		close(resultChan)
+	}()
 
-// 	result := <-resultChan
-// 	return &result
-// }
+	result := <-resultChan
+	return &result
+}
