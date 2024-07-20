@@ -156,12 +156,38 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		log.Printf("Redis ping successful: %s", pong)
 	}
 
+	log.Println("Starting title translation...")
 	translateTitle := *w.translateAsync(*novel.Title)
 	log.Printf("Translated Title: %s", translateTitle)
+
+	log.Println("Starting author translation...")
 	translateAuthor := *w.translateAsync(*novel.Author)
 	log.Printf("Translated Author: %s", translateAuthor)
+
+	log.Println("Starting description translation...")
 	translateDescription := *w.translateAsync(*novel.Description)
 	log.Printf("Translated Description: %s", translateDescription)
+
+	if novel.Title != nil {
+		translateTitle = *w.translateAsync(*novel.Title)
+		log.Printf("Translated Title: %s", translateTitle)
+	} else {
+		log.Println("Novel title is nil")
+	}
+
+	if novel.Author != nil {
+		translateAuthor = *w.translateAsync(*novel.Author)
+		log.Printf("Translated Author: %s", translateAuthor)
+	} else {
+		log.Println("Novel author is nil")
+	}
+
+	if novel.Description != nil {
+		translateDescription = *w.translateAsync(*novel.Description)
+		log.Printf("Translated Description: %s", translateDescription)
+	} else {
+		log.Println("Novel description is nil")
+	}
 
 	novel.RawTitle = novel.Title
 	novel.Title = &translateTitle
@@ -559,17 +585,25 @@ func (w *Worker) enqueue(queueKey string, value string) error {
 
 func (w *Worker) translateAsync(content string) *string {
 	resultChan := make(chan string, 1)
+	errChan := make(chan error, 1)
 
 	go func() {
 		translated, err := lib.Translate(content)
 		if err != nil {
-			resultChan <- ""
-		} else {
-			resultChan <- *translated
+			errChan <- err
+			return
 		}
-		close(resultChan)
+		resultChan <- *translated
 	}()
 
-	result := <-resultChan
-	return &result
+	select {
+	case result := <-resultChan:
+		return &result
+	case err := <-errChan:
+		log.Printf("Translation error: %v", err)
+		return &content // Return original content on error
+	case <-time.After(30 * time.Second):
+		log.Printf("Translation timed out")
+		return &content // Return original content on timeout
+	}
 }
