@@ -1,14 +1,15 @@
 package lib
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bregydoc/gtranslate"
 )
 
 func Translate(text string) (result *string, err error) {
-
 	const chunkSize = 2000
 	var resultBuilder strings.Builder
 	runes := []rune(text)
@@ -20,20 +21,48 @@ func Translate(text string) (result *string, err error) {
 		}
 
 		chunk := string(runes[i:end])
-		translated, translateErr := gtranslate.TranslateWithParams(
+		translated, translateErr := translateWithTimeout(chunk)
+		if translateErr != nil {
+			// Log the error but continue with the original chunk
+			fmt.Printf("Error translating chunk: %v\n", translateErr)
+			resultBuilder.WriteString(chunk)
+		} else {
+			resultBuilder.WriteString(translated)
+		}
+	}
+
+	translatedResult := resultBuilder.String()
+	return &translatedResult, nil
+}
+
+func translateWithTimeout(chunk string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resultChan := make(chan string, 1)
+	errChan := make(chan error, 1)
+
+	go func() {
+		translated, err := gtranslate.TranslateWithParams(
 			chunk,
 			gtranslate.TranslationParams{
 				From: "zh",
 				To:   "en",
 			},
 		)
-		if translateErr != nil {
-			return nil, fmt.Errorf("translating chunk: %w", translateErr)
+		if err != nil {
+			errChan <- err
+		} else {
+			resultChan <- translated
 		}
+	}()
 
-		resultBuilder.WriteString(translated)
+	select {
+	case result := <-resultChan:
+		return result, nil
+	case err := <-errChan:
+		return "", err
+	case <-ctx.Done():
+		return "", fmt.Errorf("translation timed out")
 	}
-
-	translatedResult := resultBuilder.String()
-	return &translatedResult, nil
 }
