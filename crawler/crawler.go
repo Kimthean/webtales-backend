@@ -260,7 +260,6 @@ func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 					Title:  chapterTitle,
 					URL:    e.Request.AbsoluteURL(chapterURL),
 				})
-				log.Printf("Found chapter: %s - %s", chapterTitle, chapterURL)
 			})
 
 			// Check for next page
@@ -293,7 +292,6 @@ func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 			log.Printf("Error visiting initial URL: %s", err)
 		}
 
-		log.Printf("Finished extracting chapters. Total chapters found: %d", len(chapters))
 	}
 
 	return chapters, nil
@@ -364,7 +362,6 @@ func (c *Crawler) crawlChapterPage(pageURL string, contentBuilder *strings.Build
 
 		// Check if the next page button is not "下一章" (Next Chapter)
 		if nextPageURL != "" && nextPageURL != pageURL && nextPageText != "下一章" && !strings.Contains(nextPageURL, "javascript:void(0);") {
-			log.Printf("Crawling next page at depth %s", nextPageURL)
 			err = c.crawlChapterPage(nextPageURL, contentBuilder)
 			if err != nil {
 				return err
@@ -428,17 +425,12 @@ func (c *Crawler) crawlChapterPage(pageURL string, contentBuilder *strings.Build
 			contentBuilder.WriteString("\n")
 		})
 
-		collector.OnResponse(func(r *colly.Response) {
-			log.Printf("Visited URL: %s", r.Request.URL)
-		})
-
 		err := collector.Visit(pageURL)
 		if err != nil {
 			log.Printf("Failed to crawl page: %s, error: %v", pageURL, err)
 			return err
 		}
 
-		log.Printf("Successfully crawled chapter from: %s", pageURL)
 		return nil
 	}
 

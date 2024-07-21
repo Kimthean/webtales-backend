@@ -157,11 +157,8 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 	}
 
 	translateTitle := *w.translateAsync(*novel.Title)
-	log.Printf("Translated Title: %s", translateTitle)
 	translateAuthor := *w.translateAsync(*novel.Author)
-	log.Printf("Translated Author: %s", translateAuthor)
 	translateDescription := *w.translateAsync(*novel.Description)
-	log.Printf("Translated Description: %s", translateDescription)
 
 	novel.RawTitle = novel.Title
 	novel.Title = &translateTitle
@@ -172,12 +169,10 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 	log.Printf("Crawled novel author: %s", *novel.Author)
 	log.Printf("Crawled novel description: %s", *novel.Description)
 
-	log.Println("Attempting to save novel to database...")
 	if err := w.DB.Create(novel).Error; err != nil {
 		log.Printf("Error saving novel: %v", err)
 		return w.enqueueNovelForRetry(novelJob)
 	}
-	log.Println("Novel saved successfully to database")
 
 	log.Printf("Enqueueing %d chapters...", len(novel.Chapters))
 	for i, chapter := range novel.Chapters {
@@ -187,9 +182,6 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 			log.Printf("Chapter %d enqueued successfully", i)
 		}
 	}
-	log.Println("All chapters enqueued")
-
-	log.Println("Novel processing completed successfully")
 
 	return nil
 }
