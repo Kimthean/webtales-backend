@@ -293,8 +293,6 @@ func (w *Worker) processChapter(jobData string) error {
 		return fmt.Errorf("unmarshalling chapter job: %w", err)
 	}
 
-	log.Printf("Crawling chapter: %s (NovelID: %d, Number: %d)", chapterJob.Title, chapterJob.NovelID, chapterJob.Number)
-
 	chapter, err := w.Crawler.CrawlChapter(chapterJob.URL, chapterJob.Title, chapterJob.Number)
 	if err != nil {
 		log.Printf("Error crawling chapter %s: %v", chapterJob.Title, err)
@@ -329,7 +327,6 @@ func (w *Worker) processChapter(jobData string) error {
 			log.Printf("Error updating existing chapter %s: %v", chapter.Title, err)
 			return w.enqueueForRetry(chapterJob)
 		}
-		log.Printf("Updated existing chapter: %s (NovelID: %d, Number: %d)", chapter.Title, chapter.NovelID, chapter.Number)
 
 		if !isWuxiabox {
 			if existingChapter.TranslatedTitle == nil {
