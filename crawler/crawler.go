@@ -34,7 +34,11 @@ func (c *Crawler) newCollector() *colly.Collector {
 
 	collector.Limit(&colly.LimitRule{
 		DomainGlob:  "*wuxiabox.com*",
-		RandomDelay: 2 * time.Second,
+		RandomDelay: 3 * time.Second,
+	})
+	collector.Limit(&colly.LimitRule{
+		DomainGlob:  "*lightnovelworld.co*",
+		RandomDelay: 4 * time.Second,
 	})
 
 	transport := &http.Transport{
@@ -207,6 +211,59 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 		}
 		novel.Chapters = chapter
 
+	} else if strings.Contains(url, "lightnovelworld.co") {
+		novel = &models.Novel{URL: &url}
+		collector := c.newCollector()
+
+		collector.OnHTML(".novel-title", func(e *colly.HTMLElement) {
+			title := strings.TrimSpace(e.Text)
+			fmt.Println("Title:", title)
+			novel.Title = &title
+		})
+
+		collector.OnHTML(".alternative-title", func(e *colly.HTMLElement) {
+			altTitle := strings.TrimSpace(e.Text)
+			fmt.Println("Alternative Title:", altTitle)
+			novel.RawTitle = &altTitle
+		})
+
+		collector.OnHTML(".property-item span[itemprop='author']", func(e *colly.HTMLElement) {
+			author := strings.TrimSpace(e.Text)
+			fmt.Println("Author:", author)
+			novel.Author = &author
+		})
+
+		collector.OnHTML(".fixed-img img", func(e *colly.HTMLElement) {
+			coverImageURL := e.Attr("src")
+			if strings.HasPrefix(coverImageURL, "data:image") {
+				coverImageURL = e.Attr("data-src")
+			}
+			fmt.Println("Cover Image URL:", coverImageURL)
+			novel.Thumbnail = &coverImageURL
+		})
+
+		collector.OnHTML(".summary .content", func(e *colly.HTMLElement) {
+			description := ""
+			e.ForEach("p", func(_ int, el *colly.HTMLElement) {
+				description += el.Text + "\n\n"
+			})
+			novel.Description = &description
+		})
+
+		collector.OnHTML("a.chapter-latest-container", func(e *colly.HTMLElement) {
+			chapterListURL := e.Request.AbsoluteURL(e.Attr("href"))
+			chapter, err := c.extractChapters(chapterListURL)
+			if err != nil {
+				log.Printf("Error extracting chapters: %s", err)
+			}
+			novel.Chapters = chapter
+		})
+
+		err := collector.Visit(url)
+		if err != nil {
+			return nil, fmt.Errorf("visiting novel page: %w", err)
+		}
+
 	}
 
 	return novel, nil
@@ -284,7 +341,6 @@ func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 			visitedPages[currentURL] = true
 		})
 
-		// Mark the base URL as visited before starting
 		visitedPages[baseURL] = true
 
 		err := collector.Visit(baseURL)
@@ -292,6 +348,30 @@ func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 			log.Printf("Error visiting initial URL: %s", err)
 		}
 
+	} else if strings.Contains(url, "lightnovelworld.co/") {
+
+		c := c.newCollector()
+
+		c.OnHTML(".chapter-list li", func(e *colly.HTMLElement) {
+			chapterURL := e.Request.AbsoluteURL(e.ChildAttr("a", "href"))
+			chapterTitle := strings.TrimSpace(e.ChildText("strong.chapter-title"))
+			chapterCounter++
+			chapters = append(chapters, models.Chapter{
+				Number: chapterCounter,
+				Title:  chapterTitle,
+				URL:    chapterURL,
+			})
+		})
+
+		c.OnHTML(".pagination li.PagedList-skipToNext a", func(e *colly.HTMLElement) {
+			nextPageURL := e.Attr("href")
+			if nextPageURL != "" {
+				fmt.Println("Found next page:", nextPageURL)
+				e.Request.Visit(nextPageURL)
+			}
+		})
+
+		c.Visit(url)
 	}
 
 	return chapters, nil
@@ -431,7 +511,17 @@ func (c *Crawler) crawlChapterPage(pageURL string, contentBuilder *strings.Build
 			return err
 		}
 
-		return nil
+	} else if strings.Contains(pageURL, "lightnovelworld.co") {
+		collector.OnHTML(".chapter-content p", func(e *colly.HTMLElement) {
+			content := e.Text + "\n\n"
+			contentBuilder.WriteString(content)
+		})
+
+		err := collector.Visit(pageURL)
+		if err != nil {
+			log.Printf("Failed to crawl page: %s, error: %v", pageURL, err)
+			return err
+		}
 	}
 
 	return nil

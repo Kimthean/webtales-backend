@@ -22,8 +22,10 @@ const (
 	chapterQueueKey     = "chapter_queue"
 	retryQueueKey       = "retry_queue"
 	translationQueueKey = "translation_queue"
-	maxRetries          = 5
-	maxConcurrent       = 20
+	finishedChaptersKey = "finished_chapters"
+
+	maxRetries    = 5
+	maxConcurrent = 20
 )
 
 type Worker struct {
@@ -124,6 +126,11 @@ func (w *Worker) processQueue(ctx context.Context, queueKey string, processor fu
 
 			if err := processor(ctx, result[1]); err != nil {
 				log.Printf("Error processing %s: %v", queueKey, err)
+			} else {
+
+				if err := w.Redis.LRem(ctx, queueKey, 1, result[1]).Err(); err != nil {
+					log.Printf("Error removing job from %s queue: %v", queueKey, err)
+				}
 			}
 		}
 	}
@@ -154,14 +161,35 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		log.Printf("Redis ping successful: %s", pong)
 	}
 
-	translateTitle := *w.translateAsync(*novel.Title)
-	translateAuthor := *w.translateAsync(*novel.Author)
-	translateDescription := *w.translateAsync(*novel.Description)
+	if !strings.Contains(novelJob.URL, "wuxiabox.com") || strings.Contains(novelJob.URL, "lightnovelworld.co") {
+		var translateTitle, translateAuthor, translateDescription string
 
-	novel.RawTitle = novel.Title
-	novel.Title = &translateTitle
-	novel.Author = &translateAuthor
-	novel.Description = &translateDescription
+		if novel.Title != nil {
+			translated := w.translateAsync(*novel.Title)
+			if translated != nil { // Check if the result is not nil
+				translateTitle = *translated
+			}
+		}
+
+		if novel.Author != nil {
+			translated := w.translateAsync(*novel.Author)
+			if translated != nil { // Check if the result is not nil
+				translateAuthor = *translated
+			}
+		}
+
+		if novel.Description != nil {
+			translated := w.translateAsync(*novel.Description)
+			if translated != nil { // Check if the result is not nil
+				translateDescription = *translated
+			}
+		}
+
+		novel.RawTitle = novel.Title
+		novel.Title = &translateTitle
+		novel.Author = &translateAuthor
+		novel.Description = &translateDescription
+	}
 
 	if err := w.DB.Create(novel).Error; err != nil {
 		log.Printf("Error saving novel: %v", err)
@@ -219,7 +247,7 @@ func (w *Worker) processChapters(ctx context.Context) {
 			}
 
 			if strings.Contains(chapterJob.URL, "wuxiabox.com") {
-				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 4).Result() // Fetch 10 jobs at a time
+				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 4).Result()
 				if err != nil {
 					log.Printf("Error getting wuxiabox.com chapter jobs: %v", err)
 					time.Sleep(time.Second)
@@ -239,6 +267,11 @@ func (w *Worker) processChapters(ctx context.Context) {
 
 						if err := w.processChapter(jobData); err != nil {
 							log.Printf("Error processing wuxiabox.com chapter: %v", err)
+						} else {
+							// Job processed successfully, remove it from the queue
+							if err := w.Redis.LRem(ctx, chapterQueueKey, 1, jobData).Err(); err != nil {
+								log.Printf("Error removing job from chapter queue: %v", err)
+							}
 						}
 					}(job)
 				}
@@ -266,16 +299,16 @@ func (w *Worker) processChapters(ctx context.Context) {
 
 						if err := w.processChapter(jobData); err != nil {
 							log.Printf("Error processing chapter: %v", err)
+						} else {
+							// Job processed successfully, remove it from the queue
+							if err := w.Redis.LRem(ctx, chapterQueueKey, 1, jobData).Err(); err != nil {
+								log.Printf("Error removing job from chapter queue: %v", err)
+							}
 						}
 					}(job)
 				}
 
 				wg.Wait()
-			}
-			// Remove processed jobs from the queue
-			_, err = w.Redis.LTrim(ctx, chapterQueueKey, int64(len(result)), -1).Result()
-			if err != nil {
-				log.Printf("Error trimming processed jobs from queue: %v", err)
 			}
 		}
 	}
@@ -287,6 +320,14 @@ func (w *Worker) processChapter(jobData string) error {
 		return fmt.Errorf("unmarshalling chapter job: %w", err)
 	}
 
+	processed, err := w.isChapterProcessed(context.Background(), chapterJob.NovelID, chapterJob.Number)
+	if err != nil {
+		log.Printf("Error checking if chapter is processed: %v", err)
+	} else if processed {
+		log.Printf("Chapter %d of novel %d already processed, skipping", chapterJob.Number, chapterJob.NovelID)
+		return nil
+	}
+
 	chapter, err := w.Crawler.CrawlChapter(chapterJob.URL, chapterJob.Title, chapterJob.Number)
 	if err != nil {
 		log.Printf("Error crawling chapter %s: %v", chapterJob.Title, err)
@@ -296,6 +337,7 @@ func (w *Worker) processChapter(jobData string) error {
 	log.Printf("Crawled chapter: %s (NovelID: %d, Number: %d)", chapter.Title, chapterJob.NovelID, chapter.Number)
 
 	if chapter.Content == nil || *chapter.Content == "" {
+		log.Printf("Chapter %s has no content", chapter.Title)
 		return w.enqueueForRetry(chapterJob)
 	}
 
@@ -304,14 +346,14 @@ func (w *Worker) processChapter(jobData string) error {
 	var existingChapter models.Chapter
 	result := w.DB.Where("novel_id = ? AND number = ?", chapter.NovelID, chapter.Number).First(&existingChapter)
 
-	isWuxiabox := strings.Contains(chapterJob.URL, "wuxiabox.com")
+	isEnglishSource := strings.Contains(chapterJob.URL, "wuxiabox.com") || strings.Contains(chapterJob.URL, "lightnovelworld.co")
 
 	if result.Error == nil {
 		existingChapter.Title = chapter.Title
 		existingChapter.Content = chapter.Content
 		existingChapter.URL = chapter.URL
 
-		if isWuxiabox {
+		if isEnglishSource {
 			existingChapter.TranslatedTitle = &chapter.Title
 			existingChapter.TranslatedContent = chapter.Content
 			existingChapter.TranslationStatus = "completed"
@@ -322,7 +364,7 @@ func (w *Worker) processChapter(jobData string) error {
 			return w.enqueueForRetry(chapterJob)
 		}
 
-		if !isWuxiabox {
+		if !isEnglishSource {
 			if existingChapter.TranslatedTitle == nil {
 				w.enqueueTranslation(existingChapter.ID, "title", existingChapter.Title)
 			}
@@ -333,6 +375,10 @@ func (w *Worker) processChapter(jobData string) error {
 	} else {
 		log.Printf("Database error while checking for existing chapter %s: %v", chapter.Title, result.Error)
 		return w.enqueueForRetry(chapterJob)
+	}
+
+	if err := w.markChapterProcessed(context.Background(), chapterJob.NovelID, chapter.Number); err != nil {
+		log.Printf("Error marking chapter as processed: %v", err)
 	}
 
 	return nil
@@ -431,10 +477,13 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 				}
 			} else {
 				log.Printf("Successfully translated and saved %s for chapter %d", job.Field, job.ChapterID)
+				// Job processed successfully, remove it from the queue
+				if err := w.Redis.LRem(ctx, translationQueueKey, 1, result[1]).Err(); err != nil {
+					log.Printf("Error removing job from translation queue: %v", err)
+				}
 			}
 		}
 	}
-
 }
 
 func (w *Worker) enqueueForRetry(job ChapterJob) error {
@@ -458,6 +507,14 @@ func (w *Worker) EnqueueNovel(url string) error {
 }
 
 func (w *Worker) EnqueueChapter(url string, novelID uint, title string, number int) error {
+	processed, err := w.isChapterProcessed(context.Background(), novelID, number)
+	if err != nil {
+		log.Printf("Error checking if chapter is processed: %v", err)
+	} else if processed {
+		log.Printf("Chapter %d of novel %d already processed, not enqueueing", number, novelID)
+		return nil
+	}
+
 	job, err := json.Marshal(struct {
 		URL     string `json:"url"`
 		NovelID uint   `json:"novel_id"`
@@ -554,4 +611,14 @@ func (w *Worker) translateAsync(content string) *string {
 
 	result := <-resultChan
 	return &result
+}
+
+func (w *Worker) isChapterProcessed(ctx context.Context, novelID uint, chapterNumber int) (bool, error) {
+	key := fmt.Sprintf("%s:%d:%d", finishedChaptersKey, novelID, chapterNumber)
+	return w.Redis.SIsMember(ctx, finishedChaptersKey, key).Result()
+}
+
+func (w *Worker) markChapterProcessed(ctx context.Context, novelID uint, chapterNumber int) error {
+	key := fmt.Sprintf("%s:%d:%d", finishedChaptersKey, novelID, chapterNumber)
+	return w.Redis.SAdd(ctx, finishedChaptersKey, key).Err()
 }
