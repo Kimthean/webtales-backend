@@ -146,8 +146,6 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		return w.enqueueNovelForRetry(novelJob)
 	}
 
-	log.Printf("Total chapters to queue: %d", len(novel.Chapters))
-
 	log.Println("Pinging Redis...")
 	pong, err := w.Redis.Ping(context.Background()).Result()
 	if err != nil {
@@ -164,10 +162,6 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 	novel.Title = &translateTitle
 	novel.Author = &translateAuthor
 	novel.Description = &translateDescription
-
-	log.Printf("Crawled novel: %s", *novel.Title)
-	log.Printf("Crawled novel author: %s", *novel.Author)
-	log.Printf("Crawled novel description: %s", *novel.Description)
 
 	if err := w.DB.Create(novel).Error; err != nil {
 		log.Printf("Error saving novel: %v", err)
@@ -379,7 +373,7 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 				continue
 			}
 
-			// time.Sleep(1 * time.Second)
+			time.Sleep(1 * time.Second)
 
 			translated, err := lib.Translate(job.Text)
 			if err != nil {
@@ -437,7 +431,6 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 				}
 			} else {
 				log.Printf("Successfully translated and saved %s for chapter %d", job.Field, job.ChapterID)
-
 			}
 		}
 	}
