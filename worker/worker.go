@@ -382,15 +382,23 @@ func (w *Worker) processBulkChapters(ctx context.Context, jobs []ChapterJob) []m
 
 			chapter.NovelID = cj.NovelID
 
-			if strings.Contains(cj.URL, "wuxiabox.com") {
-				chapter.TranslatedTitle = &chapter.Title
-				chapter.TranslatedContent = chapter.Content
-				chapter.TranslationStatus = "completed"
-			} else {
+			// Save the chapter to the database and get its ID
+			if err := w.DB.Create(chapter).Error; err != nil {
+				log.Printf("Error saving chapter to database: %v", err)
+				return
+			}
+
+			log.Printf("Saved chapter with ID: %d", chapter.ID)
+
+			if !strings.Contains(cj.URL, "wuxiabox.com") {
 				// Enqueue for translation if needed
-				log.Printf("Enqeue translation: %v", chapter.Number)
+				log.Printf("Enqueue translation for chapter: %d", chapter.ID)
 				w.enqueueTranslation(chapter.ID, "title", chapter.Title)
-				w.enqueueTranslation(chapter.ID, "content", *chapter.Content)
+				if chapter.Content != nil {
+					w.enqueueTranslation(chapter.ID, "content", *chapter.Content)
+				} else {
+					log.Printf("Chapter content is nil for chapter ID: %d", chapter.ID)
+				}
 			}
 
 			mu.Lock()
@@ -590,6 +598,9 @@ func (w *Worker) processChapter(jobData string) error {
 }
 
 func (w *Worker) enqueueTranslation(chapterID uint, field, text string) error {
+	if chapterID == 0 {
+		return fmt.Errorf("invalid ChapterID (0) for translation job")
+	}
 	job := TranslationJob{
 		ChapterID: chapterID,
 		Field:     field,
@@ -600,6 +611,7 @@ func (w *Worker) enqueueTranslation(chapterID uint, field, text string) error {
 	if err != nil {
 		return fmt.Errorf("marshalling translation job: %w", err)
 	}
+	log.Printf("Enqueueing translation job for ChapterID: %d, Field: %s", chapterID, field)
 	return w.enqueue(translationQueueKey, string(jobData))
 }
 
@@ -624,8 +636,6 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 				continue
 			}
 
-			time.Sleep(1 * time.Second)
-
 			translated, err := lib.Translate(job.Text)
 			if err != nil {
 				log.Printf("Error translating text for chapter %d, field %s: %v", job.ChapterID, job.Field, err)
@@ -635,15 +645,8 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 				}
 				continue
 			}
-			defer func() {
-				if r := recover(); r != nil {
 
-					job.IncrementRetries()
-					if job.GetRetries() < maxRetries {
-						w.enqueueTranslation(job.ChapterID, job.Field, job.Text)
-					}
-				}
-			}()
+			log.Printf("Translated text for chapter %d, field %s: ", job.ChapterID, job.Field)
 
 			var chapter models.Chapter
 			if err := w.DB.First(&chapter, job.ChapterID).Error; err != nil {
