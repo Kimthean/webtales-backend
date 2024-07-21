@@ -388,6 +388,7 @@ func (w *Worker) processBulkChapters(ctx context.Context, jobs []ChapterJob) []m
 				chapter.TranslationStatus = "completed"
 			} else {
 				// Enqueue for translation if needed
+				log.Printf("Enqeue translation: %v", chapter.Number)
 				w.enqueueTranslation(chapter.ID, "title", chapter.Title)
 				w.enqueueTranslation(chapter.ID, "content", *chapter.Content)
 			}
