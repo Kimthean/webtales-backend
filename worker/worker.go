@@ -23,7 +23,7 @@ const (
 	retryQueueKey       = "retry_queue"
 	translationQueueKey = "translation_queue"
 	maxRetries          = 5
-	maxConcurrent       = 20
+	maxConcurrent       = 10
 )
 
 type Worker struct {
@@ -258,73 +258,274 @@ func (w *Worker) processChapters(ctx context.Context) {
 				continue
 			}
 
+			var jobs []string
 			if strings.Contains(chapterJob.URL, "wuxiabox.com") {
-				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 4).Result() // Fetch 10 jobs at a time
-				if err != nil {
-					log.Printf("Error getting wuxiabox.com chapter jobs: %v", err)
-					time.Sleep(time.Second)
-					continue
-				}
-
-				var wg sync.WaitGroup
-				for _, job := range jobs {
-					wg.Add(1)
-					go func(jobData string) {
-						defer wg.Done()
-						if err := w.semaphore.Acquire(ctx, 1); err != nil {
-							log.Printf("Failed to acquire semaphore: %v", err)
-							return
-						}
-						defer w.semaphore.Release(1)
-
-						if err := w.processChapter(jobData); err != nil {
-							log.Printf("Error processing wuxiabox.com chapter: %v", err)
-						}
-					}(job)
-				}
-
-				wg.Wait()
-
+				jobs, err = w.Redis.LRange(ctx, chapterQueueKey, 0, 5).Result()
 			} else {
-				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, maxConcurrent-1).Result()
-				if err != nil {
-					log.Printf("Error getting chapter jobs: %v", err)
-					time.Sleep(time.Second)
+				jobs, err = w.Redis.LRange(ctx, chapterQueueKey, 0, maxConcurrent-1).Result()
+			}
+
+			if err != nil {
+				log.Printf("Error getting chapter jobs: %v", err)
+				time.Sleep(time.Second)
+				continue
+			}
+
+			// Filter out recently processed chapters
+			var filteredJobs []ChapterJob
+			pipe := w.Redis.Pipeline()
+			for _, job := range jobs {
+				var cj ChapterJob
+				if err := json.Unmarshal([]byte(job), &cj); err != nil {
+					log.Printf("Error unmarshalling chapter job: %v", err)
 					continue
 				}
-
-				var wg sync.WaitGroup
-				for _, job := range jobs {
-					wg.Add(1)
-					go func(jobData string) {
-						defer wg.Done()
-						if err := w.semaphore.Acquire(ctx, 1); err != nil {
-							log.Printf("Failed to acquire semaphore: %v", err)
-							return
-						}
-						defer w.semaphore.Release(1)
-
-						if err := w.processChapter(jobData); err != nil {
-							log.Printf("Error processing chapter: %v", err)
-						}
-					}(job)
-				}
-
-				wg.Wait()
+				cacheKey := fmt.Sprintf("processed_chapter:%d:%d", cj.NovelID, cj.Number)
+				pipe.Exists(ctx, cacheKey)
 			}
-			// Remove processed jobs from the queue
-			_, err = w.Redis.LTrim(ctx, chapterQueueKey, int64(len(result)), -1).Result()
+			cmders, err := pipe.Exec(ctx)
 			if err != nil {
+				log.Printf("Error checking cache for processed chapters: %v", err)
+				continue
+			}
+
+			for i, cmder := range cmders {
+				exists, err := cmder.(*redis.IntCmd).Result()
+				if err != nil {
+					log.Printf("Error checking cache result: %v", err)
+					continue
+				}
+				if exists == 0 {
+					var cj ChapterJob
+					if err := json.Unmarshal([]byte(jobs[i]), &cj); err != nil {
+						log.Printf("Error unmarshalling chapter job: %v", err)
+						continue
+					}
+					filteredJobs = append(filteredJobs, cj)
+				}
+			}
+
+			processedChapters := w.processBulkChapters(ctx, filteredJobs)
+
+			// Update database in a single transaction
+			err = w.DB.Transaction(func(tx *gorm.DB) error {
+				for _, chapter := range processedChapters {
+					result := tx.Model(&models.Chapter{}).
+						Where("novel_id = ? AND number = ?", chapter.NovelID, chapter.Number).
+						Updates(map[string]interface{}{
+							"title":              chapter.Title,
+							"content":            chapter.Content,
+							"url":                chapter.URL,
+							"translated_title":   chapter.TranslatedTitle,
+							"translated_content": chapter.TranslatedContent,
+							"translation_status": chapter.TranslationStatus,
+						})
+
+					if result.Error != nil {
+						return result.Error
+					}
+
+					if result.RowsAffected == 0 {
+						if err := tx.Create(&chapter).Error; err != nil {
+							return err
+						}
+					}
+				}
+				return nil
+			})
+
+			if err != nil {
+				log.Printf("Error updating chapters in bulk: %v", err)
+			} else {
+				log.Printf("Successfully updated %d chapters in bulk", len(processedChapters))
+			}
+
+			// Set cache for processed chapters
+			pipe = w.Redis.Pipeline()
+			for _, chapter := range processedChapters {
+				cacheKey := fmt.Sprintf("processed_chapter:%d:%d", chapter.NovelID, chapter.Number)
+				pipe.Set(ctx, cacheKey, "1", 1*time.Hour)
+			}
+			_, err = pipe.Exec(ctx)
+			if err != nil {
+				log.Printf("Error setting cache for processed chapters: %v", err)
+			}
+
+			// Remove all processed jobs from the queue, including skipped ones
+			if _, err := w.Redis.LTrim(ctx, chapterQueueKey, int64(len(jobs)), -1).Result(); err != nil {
 				log.Printf("Error trimming processed jobs from queue: %v", err)
 			}
 		}
 	}
 }
 
+func (w *Worker) processBulkChapters(ctx context.Context, jobs []ChapterJob) []models.Chapter {
+	var processedChapters []models.Chapter
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for _, job := range jobs {
+		wg.Add(1)
+		go func(cj ChapterJob) {
+			defer wg.Done()
+			if err := w.semaphore.Acquire(ctx, 1); err != nil {
+				log.Printf("Failed to acquire semaphore: %v", err)
+				return
+			}
+			defer w.semaphore.Release(1)
+
+			chapter, err := w.Crawler.CrawlChapter(cj.URL, cj.Title, cj.Number)
+			if err != nil {
+				log.Printf("Error crawling chapter %s: %v", cj.Title, err)
+				return
+			}
+
+			chapter.NovelID = cj.NovelID
+
+			if strings.Contains(cj.URL, "wuxiabox.com") {
+				chapter.TranslatedTitle = &chapter.Title
+				chapter.TranslatedContent = chapter.Content
+				chapter.TranslationStatus = "completed"
+			} else {
+				// Enqueue for translation if needed
+				w.enqueueTranslation(chapter.ID, "title", chapter.Title)
+				w.enqueueTranslation(chapter.ID, "content", *chapter.Content)
+			}
+
+			mu.Lock()
+			processedChapters = append(processedChapters, *chapter)
+			mu.Unlock()
+		}(job)
+	}
+
+	wg.Wait()
+	return processedChapters
+}
+
+// func (w *Worker) processChapters(ctx context.Context) {
+// 	for {
+// 		select {
+// 		case <-ctx.Done():
+// 			log.Println("Stopping chapter queue processing")
+// 			return
+// 		default:
+// 			// Get the first job in the queue
+// 			result, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 0).Result()
+// 			if err != nil {
+// 				log.Printf("Error getting chapter job: %v", err)
+// 				time.Sleep(time.Second)
+// 				continue
+// 			}
+
+// 			if len(result) == 0 {
+// 				time.Sleep(time.Second)
+// 				continue
+// 			}
+
+// 			var chapterJob ChapterJob
+// 			if err := json.Unmarshal([]byte(result[0]), &chapterJob); err != nil {
+// 				log.Printf("Error unmarshalling chapter job: %v", err)
+// 				continue
+// 			}
+
+// 			var jobs []string
+// 			if strings.Contains(chapterJob.URL, "wuxiabox.com") {
+// 				jobs, err = w.Redis.LRange(ctx, chapterQueueKey, 0, 4).Result()
+// 			} else {
+// 				jobs, err = w.Redis.LRange(ctx, chapterQueueKey, 0, maxConcurrent-1).Result()
+// 			}
+
+// 			if err != nil {
+// 				log.Printf("Error getting chapter jobs: %v", err)
+// 				time.Sleep(time.Second)
+// 				continue
+// 			}
+
+// 			// Filter out recently processed chapters
+// 			var filteredJobs []string
+// 			pipe := w.Redis.Pipeline()
+// 			for _, job := range jobs {
+// 				var cj ChapterJob
+// 				if err := json.Unmarshal([]byte(job), &cj); err != nil {
+// 					log.Printf("Error unmarshalling chapter job: %v", err)
+// 					continue
+// 				}
+// 				cacheKey := fmt.Sprintf("processed_chapter:%d:%d", cj.NovelID, cj.Number)
+// 				pipe.Exists(ctx, cacheKey)
+// 			}
+// 			cmders, err := pipe.Exec(ctx)
+// 			if err != nil {
+// 				log.Printf("Error checking cache for processed chapters: %v", err)
+// 				continue
+// 			}
+
+// 			for i, cmder := range cmders {
+// 				exists, err := cmder.(*redis.IntCmd).Result()
+// 				if err != nil {
+// 					log.Printf("Error checking cache result: %v", err)
+// 					continue
+// 				}
+// 				if exists == 0 {
+// 					filteredJobs = append(filteredJobs, jobs[i])
+// 				}
+// 			}
+
+// 			var wg sync.WaitGroup
+// 			for _, job := range filteredJobs {
+// 				wg.Add(1)
+// 				go func(jobData string) {
+// 					defer wg.Done()
+// 					if err := w.semaphore.Acquire(ctx, 1); err != nil {
+// 						log.Printf("Failed to acquire semaphore: %v", err)
+// 						return
+// 					}
+// 					defer w.semaphore.Release(1)
+
+// 					if err := w.processChapter(jobData); err != nil {
+// 						log.Printf("Error processing chapter: %v", err)
+// 					}
+// 				}(job)
+// 			}
+
+// 			wg.Wait()
+
+// 			// Remove all processed jobs from the queue, including skipped ones
+// 			if _, err := w.Redis.LTrim(ctx, chapterQueueKey, int64(len(jobs)), -1).Result(); err != nil {
+// 				log.Printf("Error trimming processed jobs from queue: %v", err)
+// 			}
+// 		}
+// 	}
+// }
+
 func (w *Worker) processChapter(jobData string) error {
 	var chapterJob ChapterJob
 	if err := json.Unmarshal([]byte(jobData), &chapterJob); err != nil {
 		return fmt.Errorf("unmarshalling chapter job: %w", err)
+	}
+
+	lockKey := fmt.Sprintf("chapter_lock:%d:%d", chapterJob.NovelID, chapterJob.Number)
+	cacheKey := fmt.Sprintf("processed_chapter:%d:%d", chapterJob.NovelID, chapterJob.Number)
+	ctx := context.Background()
+
+	// Try to acquire the lock
+	locked, err := w.Redis.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()
+	if err != nil {
+		log.Printf("Error acquiring lock: %v", err)
+		return w.enqueueForRetry(chapterJob)
+	}
+	if !locked {
+		log.Printf("Chapter %d for novel %d is being processed by another worker, skipping", chapterJob.Number, chapterJob.NovelID)
+		return nil
+	}
+	defer w.Redis.Del(ctx, lockKey)
+
+	// Check if chapter was recently processed
+	exists, err := w.Redis.Exists(ctx, cacheKey).Result()
+	if err != nil {
+		log.Printf("Error checking cache: %v", err)
+	} else if exists == 1 {
+		log.Printf("Chapter %d for novel %d was recently processed, skipping", chapterJob.Number, chapterJob.NovelID)
+		return nil
 	}
 
 	log.Printf("Crawling chapter: %s (NovelID: %d, Number: %d)", chapterJob.Title, chapterJob.NovelID, chapterJob.Number)
@@ -335,47 +536,53 @@ func (w *Worker) processChapter(jobData string) error {
 		return w.enqueueForRetry(chapterJob)
 	}
 
-	log.Printf("Crawled chapter: %s (NovelID: %d, Number: %d)", chapter.Title, chapterJob.NovelID, chapter.Number)
-
 	if chapter.Content == nil || *chapter.Content == "" {
 		return w.enqueueForRetry(chapterJob)
 	}
 
 	chapter.NovelID = chapterJob.NovelID
 
-	var existingChapter models.Chapter
-	result := w.DB.Where("novel_id = ? AND number = ?", chapter.NovelID, chapter.Number).First(&existingChapter)
+	// Use a single query to check if the chapter exists and update or insert accordingly
+	result := w.DB.Model(&models.Chapter{}).
+		Where("novel_id = ? AND number = ?", chapter.NovelID, chapter.Number).
+		Updates(models.Chapter{
+			Title:   chapter.Title,
+			Content: chapter.Content,
+			URL:     chapter.URL,
+		})
 
-	isWuxiabox := strings.Contains(chapterJob.URL, "wuxiabox.com")
+	if result.Error != nil {
+		log.Printf("Error upserting chapter %s: %v", chapterJob.Title, result.Error)
+		return w.enqueueForRetry(chapterJob)
+	}
 
-	if result.Error == nil {
-		existingChapter.Title = chapter.Title
-		existingChapter.Content = chapter.Content
-		existingChapter.URL = chapter.URL
-
-		if isWuxiabox {
-			existingChapter.TranslatedTitle = &chapter.Title
-			existingChapter.TranslatedContent = chapter.Content
-			existingChapter.TranslationStatus = "completed"
+	if result.RowsAffected == 0 {
+		// Chapter doesn't exist, create it
+		newChapter := models.Chapter{
+			NovelID: chapter.NovelID,
+			Number:  chapter.Number,
+			Title:   chapter.Title,
+			Content: chapter.Content,
+			URL:     chapter.URL,
 		}
 
-		if err := w.DB.Save(&existingChapter).Error; err != nil {
-			log.Printf("Error updating existing chapter %s: %v", chapter.Title, err)
+		if err := w.DB.Create(&newChapter).Error; err != nil {
+			log.Printf("Error creating new chapter %s: %v", chapterJob.Title, err)
 			return w.enqueueForRetry(chapterJob)
 		}
-		log.Printf("Updated existing chapter: %s (NovelID: %d, Number: %d)", chapter.Title, chapter.NovelID, chapter.Number)
+	}
 
-		if !isWuxiabox {
-			if existingChapter.TranslatedTitle == nil {
-				w.enqueueTranslation(existingChapter.ID, "title", existingChapter.Title)
-			}
-			if existingChapter.TranslatedContent == nil || *existingChapter.TranslatedContent == "" {
-				w.enqueueTranslation(existingChapter.ID, "content", *existingChapter.Content)
-			}
-		}
-	} else {
-		log.Printf("Database error while checking for existing chapter %s: %v", chapter.Title, result.Error)
-		return w.enqueueForRetry(chapterJob)
+	log.Printf("Successfully processed chapter: %s (NovelID: %d, Number: %d)", chapter.Title, chapter.NovelID, chapter.Number)
+
+	// After successful processing, add to cache
+	if err := w.Redis.Set(ctx, cacheKey, "1", 1*time.Hour).Err(); err != nil {
+		log.Printf("Error setting cache: %v", err)
+	}
+
+	// Enqueue for translation if needed
+	if !strings.Contains(chapterJob.URL, "wuxiabox.com") {
+		w.enqueueTranslation(chapter.ID, "title", chapter.Title)
+		w.enqueueTranslation(chapter.ID, "content", *chapter.Content)
 	}
 
 	return nil
@@ -416,7 +623,7 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 				continue
 			}
 
-			// time.Sleep(1 * time.Second)
+			time.Sleep(1 * time.Second)
 
 			translated, err := lib.Translate(job.Text)
 			if err != nil {
@@ -585,25 +792,17 @@ func (w *Worker) enqueue(queueKey string, value string) error {
 
 func (w *Worker) translateAsync(content string) *string {
 	resultChan := make(chan string, 1)
-	errChan := make(chan error, 1)
 
 	go func() {
 		translated, err := lib.Translate(content)
 		if err != nil {
-			errChan <- err
-			return
+			resultChan <- ""
+		} else {
+			resultChan <- *translated
 		}
-		resultChan <- *translated
+		close(resultChan)
 	}()
 
-	select {
-	case result := <-resultChan:
-		return &result
-	case err := <-errChan:
-		log.Printf("Translation error: %v", err)
-		return &content // Return original content on error
-	case <-time.After(30 * time.Second):
-		log.Printf("Translation timed out")
-		return &content // Return original content on timeout
-	}
+	result := <-resultChan
+	return &result
 }

@@ -34,7 +34,7 @@ func (c *Crawler) newCollector() *colly.Collector {
 
 	collector.Limit(&colly.LimitRule{
 		DomainGlob:  "*wuxiabox.com*",
-		RandomDelay: 5 * time.Second,
+		RandomDelay: 2 * time.Second,
 	})
 
 	transport := &http.Transport{
