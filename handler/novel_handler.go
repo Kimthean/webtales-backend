@@ -85,18 +85,18 @@ func (h *NovelHandler) GetLatestNovels(c echo.Context) error {
 	return c.JSON(http.StatusOK, novels)
 }
 
-func (h *NovelHandler) GetNovelChapters (c echo.Context) error {
+func (h *NovelHandler) GetNovelChapters(c echo.Context) error {
 	id := c.Param("id")
 
 	var chapterResponses []ChapterResponse
 	if err := h.DB.Table("chapters").
-			Select("id, number, updated_at, translated_title, translation_status").
-			Where("novel_id = ?", id).
-			Order("number ASC").
-			Scan(&chapterResponses).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return echo.NewHTTPError(http.StatusNotFound, "Novel not found")
-			}
+		Select("id, number, updated_at, translated_title, translation_status").
+		Where("novel_id = ?", id).
+		Order("number ASC").
+		Scan(&chapterResponses).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return echo.NewHTTPError(http.StatusNotFound, "Novel not found")
+		}
 		return err
 	}
 
@@ -104,80 +104,84 @@ func (h *NovelHandler) GetNovelChapters (c echo.Context) error {
 }
 
 func (h *NovelHandler) GetNovelChaptersWithPage(c echo.Context) error {
-    id := c.Param("id")
+	id := c.Param("id")
 
-    var page, pageSize int = 1, 20
-    var err error
+	var page, pageSize int = 1, 20
+	var err error
 
-    if qp := c.QueryParam("page"); qp != "" {
-        page, err = strconv.Atoi(qp)
-        if err != nil || page < 1 {
-            return echo.NewHTTPError(http.StatusBadRequest, "Invalid page number")
-        }
-    }
-    if qp := c.QueryParam("pageSize"); qp != "" {
-        pageSize, err = strconv.Atoi(qp)
-        if err != nil || pageSize < 1 || pageSize > 100 { // Added upper limit
-            return echo.NewHTTPError(http.StatusBadRequest, "Invalid page size")
-        }
-    }
+	if qp := c.QueryParam("page"); qp != "" {
+		page, err = strconv.Atoi(qp)
+		if err != nil || page < 1 {
+			return echo.NewHTTPError(http.StatusBadRequest, "Invalid page number")
+		}
+	}
+	if qp := c.QueryParam("pageSize"); qp != "" {
+		pageSize, err = strconv.Atoi(qp)
+		if err != nil || pageSize < 1 || pageSize > 100 { // Added upper limit
+			return echo.NewHTTPError(http.StatusBadRequest, "Invalid page size")
+		}
+	}
 
-    offset := (page - 1) * pageSize
+	offset := (page - 1) * pageSize
 
-    var chapterResponses []ChapterResponse
-    var totalChapters int64
+	var chapterResponses []ChapterResponse
+	var totalChapters int64
 
-    if err := h.DB.Model(&models.Chapter{}).Where("novel_id = ?", id).Count(&totalChapters).Error; err != nil {
-        return err
-    }
+	if err := h.DB.Model(&models.Chapter{}).Where("novel_id = ?", id).Count(&totalChapters).Error; err != nil {
+		return err
+	}
 
-    if err := h.DB.Table("chapters").
-        Select("id, number, updated_at, translated_title, translation_status").
-        Where("novel_id = ?", id).
-        Order("number ASC").
-        Limit(pageSize).
-        Offset(offset).
-        Scan(&chapterResponses).Error; err != nil {
-        if err == gorm.ErrRecordNotFound {
-            return echo.NewHTTPError(http.StatusNotFound, "Novel not found")
-        }
-        return err
-    }
+	if err := h.DB.Table("chapters").
+		Select("id, number, updated_at, translated_title, translation_status").
+		Where("novel_id = ?", id).
+		Order("number ASC").
+		Limit(pageSize).
+		Offset(offset).
+		Scan(&chapterResponses).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return echo.NewHTTPError(http.StatusNotFound, "Novel not found")
+		}
+		return err
+	}
 
-    response := map[string]interface{}{
-        "chapters":      chapterResponses,
-        "totalChapters": totalChapters,
-        "currentPage":   page,
-        "pageSize":      pageSize,
-        "totalPages":    int(math.Ceil(float64(totalChapters) / float64(pageSize))),
-    }
+	response := map[string]interface{}{
+		"chapters":      chapterResponses,
+		"totalChapters": totalChapters,
+		"currentPage":   page,
+		"pageSize":      pageSize,
+		"totalPages":    int(math.Ceil(float64(totalChapters) / float64(pageSize))),
+	}
 
-    return c.JSON(http.StatusOK, response)
+	return c.JSON(http.StatusOK, response)
 }
 
 func (h *NovelHandler) GetChapterByID(c echo.Context) error {
 	novelID := c.Param("novel_id")
 	chapterNumber := c.Param("number")
 
-	var chapterResponse struct {
+	var response struct {
 		ID                uint      `json:"id"`
 		Number            int       `json:"number"`
 		UpdatedAt         time.Time `json:"updated_at"`
 		TranslatedTitle   string    `json:"translated_title"`
 		TranslationStatus string    `json:"translation_status"`
 		TranslatedContent string    `json:"translated_content"`
+		NovelID           string    `json:"novel_id"`
+		NovelTitle        string    `json:"novel_title"`
 	}
+
 	if err := h.DB.Table("chapters").
-		Select("id, number, updated_at, translated_title, translation_status, translated_content").
-		Where("novel_id = ? AND number = ?", novelID, chapterNumber).
-		First(&chapterResponse).Error; err != nil {
+		Select("chapters.id, chapters.number, chapters.updated_at, chapters.translated_title, chapters.translation_status, chapters.translated_content, novels.title as novel_title, novels.id as novel_id").
+		Joins("join novels on novels.id = chapters.novel_id").
+		Where("chapters.novel_id = ? AND chapters.number = ?", novelID, chapterNumber).
+		First(&response).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return echo.NewHTTPError(http.StatusNotFound, "Chapter not found")
 		}
 		return err
 	}
 
-	return c.JSON(http.StatusOK, chapterResponse)
+	return c.JSON(http.StatusOK, response)
 }
 
 func (h *NovelHandler) GetNovelTranslationStatus(c echo.Context) error {

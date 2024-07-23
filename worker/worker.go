@@ -166,21 +166,21 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 
 		if novel.Title != nil {
 			translated := w.translateAsync(*novel.Title)
-			if translated != nil { // Check if the result is not nil
+			if translated != nil {
 				translateTitle = *translated
 			}
 		}
 
 		if novel.Author != nil {
 			translated := w.translateAsync(*novel.Author)
-			if translated != nil { // Check if the result is not nil
+			if translated != nil {
 				translateAuthor = *translated
 			}
 		}
 
 		if novel.Description != nil {
 			translated := w.translateAsync(*novel.Description)
-			if translated != nil { // Check if the result is not nil
+			if translated != nil {
 				translateDescription = *translated
 			}
 		}
@@ -405,7 +405,7 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 			log.Println("Stopping translation queue processing")
 			return
 		default:
-			result, err := w.Redis.BLPop(ctx, 5*time.Second, translationQueueKey).Result()
+			result, err := w.Redis.BLPop(ctx, 1*time.Second, translationQueueKey).Result()
 			if err == redis.Nil {
 				continue
 			} else if err != nil {
@@ -418,8 +418,6 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 				log.Printf("Error unmarshalling translation job: %v", err)
 				continue
 			}
-
-			time.Sleep(1 * time.Second)
 
 			translated, err := lib.Translate(job.Text)
 			if err != nil {
