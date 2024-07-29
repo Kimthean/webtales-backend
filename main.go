@@ -36,6 +36,7 @@ func main() {
 	e.GET("/novels/:novel_id/chapters/:number", novelHandler.GetChapterByID)
 	e.GET("/novels/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
 	e.DELETE("/novels/:id", novelHandler.DeleteNovelByID)
+	e.GET("/search", novelHandler.SearchNovels)
 
 	crawler := crawler.NewCrawler()
 	w := worker.NewWorker(crawler, db, rdb)

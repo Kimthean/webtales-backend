@@ -230,3 +230,37 @@ func (h *NovelHandler) DeleteNovelByID(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Novel and associated chapters deleted permanently"})
 }
+
+func (h *NovelHandler) SearchNovels(c echo.Context) error {
+	query := c.QueryParam("q")
+	if query == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "Search query is required")
+	}
+
+	var novels []struct {
+		ID                 uint      `json:"id"`
+		Title              string    `json:"title"`
+		Author             string    `json:"author"`
+		Description        string    `json:"description"`
+		Thumbnail          string    `json:"thumbnail"`
+		UpdatedAt          time.Time `json:"updated_at"`
+		TotalChaptersCount int       `json:"total_chapters_count"`
+		Status             struct {
+			Status string `json:"status"`
+		} `json:"status"`
+	}
+
+	if err := h.DB.Table("novels").
+		Select("novels.id, novels.title, novels.author, novels.description, novels.thumbnail, novels.updated_at, "+
+			"COUNT(chapters.id) as total_chapters_count, "+
+			"CASE WHEN COUNT(chapters.id) = SUM(CASE WHEN chapters.translation_status = 'completed' THEN 1 ELSE 0 END) THEN 'completed' ELSE 'in_progress' END as status").
+		Joins("LEFT JOIN chapters ON chapters.novel_id = novels.id").
+		Where("novels.title ILIKE ? OR novels.author ILIKE ? OR novels.description ILIKE ?",
+			"%"+query+"%", "%"+query+"%", "%"+query+"%").
+		Group("novels.id").
+		Scan(&novels).Error; err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "Error searching novels")
+	}
+
+	return c.JSON(http.StatusOK, novels)
+}

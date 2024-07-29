@@ -6,10 +6,10 @@ import (
 	"go-novel/models"
 	"log"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
 	"golang.org/x/exp/rand"
 )
@@ -484,25 +484,43 @@ func (c *Crawler) crawlChapterPage(pageURL string, contentBuilder *strings.Build
 			time.Sleep(4 * time.Second)
 		})
 
-		collector.OnHTML(".chapter-content p", func(e *colly.HTMLElement) {
-			paragraph := e.Text
-
-			paragraph = strings.TrimSpace(paragraph)
-			paragraph = regexp.MustCompile(`\s+`).ReplaceAllString(paragraph, " ")
-
-			sentences := strings.Split(paragraph, ". ")
-
-			for i, sentence := range sentences {
-				trimmedSentence := strings.TrimSpace(sentence)
-				if trimmedSentence != "" {
-					if i < len(sentences)-1 {
-						trimmedSentence += "."
+		collector.OnHTML(".chapter-content", func(e *colly.HTMLElement) {
+			// Function to process text content
+			processContent := func(text string) {
+				text = strings.TrimSpace(text)
+				if text != "" {
+					sentences := strings.Split(text, ". ")
+					for i, sentence := range sentences {
+						trimmedSentence := strings.TrimSpace(sentence)
+						if trimmedSentence != "" {
+							if i < len(sentences)-1 {
+								trimmedSentence += "."
+							}
+							contentBuilder.WriteString(trimmedSentence + "\n\n")
+						}
 					}
-					contentBuilder.WriteString(trimmedSentence + "\n")
 				}
 			}
 
-			contentBuilder.WriteString("\n")
+			// Process <p> tags
+			e.ForEach("p", func(_ int, el *colly.HTMLElement) {
+				processContent(el.Text)
+			})
+
+			// Process direct text nodes
+			e.DOM.Contents().Each(func(_ int, s *goquery.Selection) {
+				if goquery.NodeName(s) == "#text" {
+					text := strings.TrimSpace(s.Text())
+					processContent(text)
+				}
+			})
+
+			// Remove any unwanted elements
+			content := contentBuilder.String()
+			content = strings.ReplaceAll(content, "&ZeroWidthSpace;", "")
+
+			contentBuilder.Reset()
+			contentBuilder.WriteString(content)
 		})
 
 		err := collector.Visit(pageURL)
