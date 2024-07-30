@@ -264,3 +264,67 @@ func (h *NovelHandler) SearchNovels(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, novels)
 }
+
+
+func (h *NovelHandler) GetPaginatedNovels(c echo.Context) error {
+    var page, pageSize int = 1, 10
+    var err error
+
+    if qp := c.QueryParam("page"); qp != "" {
+        page, err = strconv.Atoi(qp)
+        if err != nil || page < 1 {
+            return echo.NewHTTPError(http.StatusBadRequest, "Invalid page number")
+        }
+    }
+    if qp := c.QueryParam("pageSize"); qp != "" {
+        pageSize, err = strconv.Atoi(qp)
+        if err != nil || pageSize < 1 || pageSize > 100 {
+            return echo.NewHTTPError(http.StatusBadRequest, "Invalid page size")
+        }
+    }
+
+    offset := (page - 1) * pageSize
+
+    var novelResponses []struct {
+        models.Novel
+        LastChapterTitle   string `json:"last_chapter_title"`
+        LastChapterNumber  int    `json:"last_chapter_number"`
+        TotalChaptersCount int    `json:"total_chapters_count"`
+    }
+
+    var totalNovels int64
+
+    maxChapterIDSubquery := h.DB.Table("chapters").
+        Select("MAX(id) as id, novel_id").
+        Group("novel_id")
+
+    chapterCountSubquery := h.DB.Table("chapters").
+        Select("COUNT(id) as total_chapters_count, novel_id").
+        Group("novel_id")
+
+    query := h.DB.Table("novels").
+        Select("novels.*, c.number as last_chapter_number, c.translated_title as last_chapter_title, cc.total_chapters_count").
+        Joins("LEFT JOIN (?) as mc ON mc.novel_id = novels.id", maxChapterIDSubquery).
+        Joins("LEFT JOIN chapters as c ON mc.id = c.id").
+        Joins("LEFT JOIN (?) as cc ON cc.novel_id = novels.id", chapterCountSubquery).
+        Where("novels.deleted_at IS NULL").
+        Order("novels.updated_at DESC")
+
+    if err := query.Count(&totalNovels).Error; err != nil {
+        return echo.NewHTTPError(http.StatusInternalServerError, "Error counting novels")
+    }
+
+    if err := query.Limit(pageSize).Offset(offset).Scan(&novelResponses).Error; err != nil {
+        return echo.NewHTTPError(http.StatusInternalServerError, "Error fetching novels")
+    }
+
+    response := map[string]interface{}{
+        "novels":       novelResponses,
+        "totalNovels":  totalNovels,
+        "currentPage":  page,
+        "pageSize":     pageSize,
+        "totalPages":   int(math.Ceil(float64(totalNovels) / float64(pageSize))),
+    }
+
+    return c.JSON(http.StatusOK, response)
+}

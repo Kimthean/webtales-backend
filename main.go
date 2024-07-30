@@ -7,7 +7,9 @@ import (
 	"go-novel/db"
 	handlers "go-novel/handler"
 	"go-novel/models"
+	"go-novel/utils"
 	"go-novel/worker"
+	"log"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/labstack/echo/v4"
@@ -26,12 +28,18 @@ func main() {
 		Addr: cfg.RedisURL,
 	})
 
+	err = utils.InitS3()
+	if err != nil {
+		log.Fatalf("Failed to initialize S3: %v", err)
+	}
+
 	e := echo.New()
 	novelHandler := &handlers.NovelHandler{DB: db}
 
 	e.GET("/novels/:id", novelHandler.GetNovel)
 	e.GET("/novels/:id/chapters", novelHandler.GetNovelChapters)
-	e.GET("/novels", novelHandler.GetNovels)
+	e.GET("/novels/all", novelHandler.GetNovels)
+	e.GET("/novels", novelHandler.GetPaginatedNovels)
 	e.GET("/latest-novels", novelHandler.GetLatestNovels)
 	e.GET("/novels/:novel_id/chapters/:number", novelHandler.GetChapterByID)
 	e.GET("/novels/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
