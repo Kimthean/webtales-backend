@@ -10,9 +10,10 @@ import (
 	"go-novel/utils"
 	"go-novel/worker"
 	"log"
+	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
-	"github.com/labstack/echo/v4"
 )
 
 func main() {
@@ -33,31 +34,33 @@ func main() {
 		log.Fatalf("Failed to initialize S3: %v", err)
 	}
 
-	e := echo.New()
+	r := gin.Default()
 	novelHandler := &handlers.NovelHandler{DB: db}
 
-	e.GET("/novels/:id", novelHandler.GetNovel)
-	e.GET("/novels/:id/chapters", novelHandler.GetNovelChapters)
-	e.GET("/novels/all", novelHandler.GetNovels)
-	e.GET("/novels", novelHandler.GetPaginatedNovels)
-	e.GET("/latest-novels", novelHandler.GetLatestNovels)
-	e.GET("/novels/:novel_id/chapters/:number", novelHandler.GetChapterByID)
-	e.GET("/novels/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
-	e.DELETE("/novels/:id", novelHandler.DeleteNovelByID)
-	e.GET("/search", novelHandler.SearchNovels)
+	r.GET("/novels/:id", novelHandler.GetNovel)
+	r.GET("/novels/:id/chapters", novelHandler.GetNovelChapters)
+	r.GET("/novels/all", novelHandler.GetNovels)
+	r.GET("/novels", novelHandler.GetPaginatedNovels)
+	r.GET("/latest-novels", novelHandler.GetLatestNovels)
+	r.GET("/novels/:id/chapter/:number", novelHandler.GetChapterByID)
+	r.GET("/novels/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
+	r.DELETE("/novels/:id", novelHandler.DeleteNovelByID)
+	r.GET("/search", novelHandler.SearchNovels)
 
 	crawler := crawler.NewCrawler()
 	w := worker.NewWorker(crawler, db, rdb)
 	go w.Start(context.Background())
 
-	e.POST("/crawl", func(c echo.Context) error {
-		url := c.FormValue("url")
+	r.POST("/crawl", func(c *gin.Context) {
+		url := c.Query("url")
+		log.Printf("Crawling %s", url)
 		err := w.EnqueueNovel(url)
 		if err != nil {
-			return c.String(500, "Failed to enqueue novel")
+			c.String(http.StatusInternalServerError, "Failed to enqueue novel")
+			return
 		}
-		return c.String(200, "Novel queued for crawling")
+		c.String(http.StatusOK, "Novel queued for crawling")
 	})
 
-	e.Logger.Fatal(e.Start(":" + cfg.ServerPort))
+	r.Run(":" + cfg.ServerPort)
 }

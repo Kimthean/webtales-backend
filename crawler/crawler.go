@@ -489,16 +489,7 @@ func (c *Crawler) crawlChapterPage(pageURL string, contentBuilder *strings.Build
 			processContent := func(text string) {
 				text = strings.TrimSpace(text)
 				if text != "" {
-					sentences := strings.Split(text, ". ")
-					for i, sentence := range sentences {
-						trimmedSentence := strings.TrimSpace(sentence)
-						if trimmedSentence != "" {
-							if i < len(sentences)-1 {
-								trimmedSentence += "."
-							}
-							contentBuilder.WriteString(trimmedSentence + "\n\n")
-						}
-					}
+					contentBuilder.WriteString(text + "\n\n")
 				}
 			}
 
@@ -510,8 +501,7 @@ func (c *Crawler) crawlChapterPage(pageURL string, contentBuilder *strings.Build
 			// Process direct text nodes
 			e.DOM.Contents().Each(func(_ int, s *goquery.Selection) {
 				if goquery.NodeName(s) == "#text" {
-					text := strings.TrimSpace(s.Text())
-					processContent(text)
+					processContent(s.Text())
 				}
 			})
 
