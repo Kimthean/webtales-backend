@@ -46,7 +46,7 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 
 	sqlDB.SetMaxOpenConns(100)
 
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
 	return db, nil
 }
