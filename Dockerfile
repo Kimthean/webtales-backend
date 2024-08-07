@@ -1,15 +1,17 @@
-FROM golang:1.22.2-alpine
+# Use an official Go runtime as a parent image
+FROM golang:1.18-alpine
 
-RUN apk add --no-cache iputils curl bind-tools
-
+# Set the working directory inside the container
 WORKDIR /app
 
-COPY go.mod go.sum ./
-RUN go mod download
+# Copy the local package files to the container's workspace.
+ADD . /app
 
-COPY . .
+# Build the Go app
 RUN go build -o main .
 
+# Run the command by default when the container starts.
+CMD ["/app/main"]
+
+# Document that the service listens on port 8080.
 EXPOSE 8080
-# Command to run the executable
-CMD ["./main"]
