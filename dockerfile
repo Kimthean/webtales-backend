@@ -26,5 +26,14 @@ RUN go build -o main .
 # Expose port 8080 to the outside world
 EXPOSE 8080
 
+# Copy start script
+COPY start.sh .
+
+# Make start script executable
+RUN chmod +x start.sh
+
+# Use start script as entrypoint
+CMD ["./start.sh"]
+
 # Command to run the application with Air
 CMD ["air", "-c", ".air.toml"]
