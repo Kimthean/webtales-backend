@@ -15,7 +15,11 @@ import (
 )
 
 func main() {
-	cfg := config.LoadConfig()
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
 
 	gin.SetMode(gin.ReleaseMode)
 

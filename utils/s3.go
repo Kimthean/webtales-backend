@@ -15,8 +15,11 @@ import (
 var s3Client *s3.S3
 
 func InitS3() error {
-	cfg := config.LoadConfig()
-
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+	
 	s3Config := &aws.Config{
 		Credentials: credentials.NewStaticCredentials(
 			cfg.S3AccessKey,
