@@ -6,7 +6,6 @@ import (
 	"go-novel/crawler"
 	"go-novel/db"
 	handlers "go-novel/handler"
-	"go-novel/models"
 	"go-novel/utils"
 	"go-novel/worker"
 	"log"
@@ -23,7 +22,7 @@ func main() {
 	if err != nil {
 		panic("failed to connect database")
 	}
-	db.AutoMigrate(&models.Novel{}, &models.Chapter{})
+	// db.AutoMigrate(&models.Novel{}, &models.Chapter{})
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr: cfg.RedisURL,
