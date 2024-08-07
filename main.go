@@ -18,6 +18,8 @@ import (
 func main() {
 	cfg := config.LoadConfig()
 
+	gin.SetMode(gin.ReleaseMode)
+
 	db, err := db.InitDB(cfg.DatabaseURL)
 	if err != nil {
 		panic("failed to connect database")
