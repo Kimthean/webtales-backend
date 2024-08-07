@@ -1,10 +1,11 @@
+# Dockerfile
 FROM golang:1.22.2-alpine AS builder
 
 # Install git and development dependencies
 RUN apk add --no-cache git
 
 # Install Air for hot-reloading
-RUN go install github.com/cosmtrek/air@latest
+RUN go install github.com/air-verse/air@latest
 
 WORKDIR /app
 
@@ -14,26 +15,14 @@ COPY go.mod go.sum ./
 # Download all dependencies
 RUN go mod download
 
-# Copy the source code and .air.toml
+# Copy the source code
 COPY . .
+COPY --no-ignore .air.toml .
 
-# Verify the presence of .air.toml
-RUN ls -la && cat .air.toml
-
-# Build the application
-RUN go build -o main .
 
 # Expose port 8080 to the outside world
 EXPOSE 8080
 
-# Copy start script
-COPY start.sh .
-
-# Make start script executable
-RUN chmod +x start.sh
-
-# Use start script as entrypoint
-CMD ["./start.sh"]
-
 # Command to run the application with Air
-CMD ["air", "-c", ".air.toml"]
+RUN go clean -modcache
+CMD ["air", "-c", "./.air.toml"]
