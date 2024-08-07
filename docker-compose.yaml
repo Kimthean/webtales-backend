@@ -8,3 +8,10 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
+
+    networks:
+      - coolify
+
+networks:
+  coolify:
+    external: true
