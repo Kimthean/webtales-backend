@@ -15,7 +15,7 @@ COPY . .
 RUN go build -o main .
 
 # Expose port 8080 (or whatever port your app uses)
-EXPOSE 8080
+EXPOSE 8090
 
 # Command to run the executable
 CMD ["./main"]
