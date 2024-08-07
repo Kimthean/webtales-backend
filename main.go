@@ -6,7 +6,6 @@ import (
 	"go-novel/crawler"
 	"go-novel/db"
 	handlers "go-novel/handler"
-	"go-novel/utils"
 	"go-novel/worker"
 	"log"
 	"net/http"
@@ -30,10 +29,10 @@ func main() {
 		Addr: cfg.RedisURL,
 	})
 
-	err = utils.InitS3()
-	if err != nil {
-		log.Fatalf("Failed to initialize S3: %v", err)
-	}
+	// err = utils.InitS3()
+	// if err != nil {
+	// 	log.Fatalf("Failed to initialize S3: %v", err)
+	// }
 
 	r := gin.Default()
 	novelHandler := &handlers.NovelHandler{DB: db}

@@ -26,8 +26,8 @@ func LoadConfig() *Config {
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		RedisURL:    os.Getenv("REDIS_URL"),
 		ServerPort:  os.Getenv("PORT"),
-		S3AccessKey: os.Getenv("S3_SECRET_KEY"),
-		S3SecretKey: os.Getenv("S3_ACCESS_KEY"),
-		S3Endpoint:  os.Getenv("S3_ENDPOINT"),
+		// S3AccessKey: os.Getenv("S3_SECRET_KEY"),
+		// S3SecretKey: os.Getenv("S3_ACCESS_KEY"),
+		// S3Endpoint:  os.Getenv("S3_ENDPOINT"),
 	}
 }

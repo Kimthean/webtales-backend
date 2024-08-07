@@ -1,17 +1,32 @@
-# Use an official Go runtime as a parent image
-FROM golang:1.18-alpine
+# Use the official Go image as the base image
+FROM golang:1.17-alpine AS builder
 
-# Set the working directory inside the container
+# Set the working directory
 WORKDIR /app
 
-# Copy the local package files to the container's workspace.
-ADD . /app
+# Copy go mod and sum files
+COPY go.mod go.sum ./
 
-# Build the Go app
-RUN go build -o main .
+# Download all dependencies
+RUN go mod download
 
-# Run the command by default when the container starts.
-CMD ["/app/main"]
+# Copy the source code
+COPY . .
 
-# Document that the service listens on port 8080.
-EXPOSE 8080
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
+
+# Use a smaller base image for the final image
+FROM alpine:latest  
+
+# Set the working directory
+WORKDIR /root/
+
+# Copy the binary from the builder stage
+COPY --from=builder /app/main .
+
+# Expose the port the app runs on
+EXPOSE ${APP_PORT}
+
+# Command to run the executable
+CMD ["./main"]
