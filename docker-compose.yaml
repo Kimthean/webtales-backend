@@ -1,5 +1,7 @@
 services:
   app:
+    networks:
+      - coolify
     build:
       context: .
       dockerfile: Dockerfile
