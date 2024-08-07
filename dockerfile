@@ -18,16 +18,11 @@ RUN go mod download
 # Copy the source code
 COPY . .
 
-# Print directory contents and file info
-RUN echo "Directory contents:" && \
-    ls -la && \
-    echo ".air.toml contents:" && \
-    cat air.toml || echo ".air.toml not found"
-
+# Build the application
+RUN go build -o main .
 
 # Expose port 8080 to the outside world
 EXPOSE 8080
 
-# Command to run the application with Air
-RUN go clean -modcache
-CMD ["air", "-c", ".air.toml"]
+
+CMD ["./main"]
