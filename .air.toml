@@ -1,27 +1,26 @@
-FROM golang:1.22.2-alpine AS builder
+root = "."
+tmp_dir = "tmp"
 
-# Install git and development dependencies
-RUN apk add --no-cache git
+[build]
+cmd = "go build -buildvcs=false -o ./tmp/main ."
+bin = "./tmp/main"
+full_bin = "APP_ENV=dev ./tmp/main"
+include_ext = ["go", "tpl", "tmpl", "html"]
+exclude_dir = ["assets", "tmp", "vendor", ".git"]
+include_dir = []
+exclude_file = []
+delay = 1000 # ms
+stop_on_error = true
+log = "air_errors.log"
 
-# Install Air for hot-reloading
-RUN go install github.com/cosmtrek/air@latest
+[log]
+time = false
 
-WORKDIR /app
+[color]
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
 
-# Copy go mod and sum files
-COPY go.mod go.sum ./
-
-# Download all dependencies
-RUN go mod download
-
-# Copy the source code and .air.toml
-COPY . .
-
-# Build the application
-RUN go build -o main .
-
-# Expose port 8080 to the outside world
-EXPOSE 8080
-
-# Command to run the application with Air
-CMD ["air", "-c", ".air.toml"]
+[misc]
+clean_on_exit = true
