@@ -8,12 +8,3 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
-      - PORT=${APP_PORT}
-    volumes:
-      - .:/app
-    networks:
-      - app-network
-
-networks:
-  app-network:
-    driver: bridge

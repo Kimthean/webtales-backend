@@ -1,11 +1,4 @@
-# Dockerfile
-FROM golang:1.22.2-alpine AS builder
-
-# Install git and development dependencies
-RUN apk add --no-cache git
-
-# Install Air for hot-reloading
-RUN go install github.com/air-verse/air@latest
+FROM golang:1.22.2-alpine
 
 WORKDIR /app
 
@@ -21,8 +14,8 @@ COPY . .
 # Build the application
 RUN go build -o main .
 
-# Expose port 8090 to the outside world
-EXPOSE 8090
+# Expose port 8080 (or whatever port your app uses)
+EXPOSE 8080
 
-
+# Command to run the executable
 CMD ["./main"]
