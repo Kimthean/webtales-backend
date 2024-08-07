@@ -21,8 +21,8 @@ COPY . .
 # Print directory contents and file info
 RUN echo "Directory contents:" && \
     ls -la && \
-    echo "air.toml contents:" && \
-    cat air.toml || echo "air.toml not found"
+    echo ".air.toml contents:" && \
+    cat air.toml || echo ".air.toml not found"
 
 
 # Expose port 8080 to the outside world
