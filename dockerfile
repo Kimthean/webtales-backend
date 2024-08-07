@@ -25,4 +25,4 @@ EXPOSE 8080
 
 # Command to run the application with Air
 RUN go clean -modcache
-CMD ["air", "-c", ".air.toml"]
+CMD ["air", "-c", "air.toml"]
