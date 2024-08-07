@@ -17,7 +17,7 @@ RUN go mod download
 
 # Copy the source code
 COPY . .
-COPY --no-ignore .air.toml .
+COPY .air.toml .
 
 
 # Expose port 8080 to the outside world
