@@ -22,8 +22,6 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	gin.SetMode(gin.ReleaseMode)
-
 	db, err := db.InitDB(cfg.DatabaseURL)
 	if err != nil {
 		panic("failed to connect database")
@@ -56,6 +54,7 @@ func main() {
 	// 	log.Fatalf("Failed to initialize S3: %v", err)
 	// }
 
+	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 	novelHandler := &handlers.NovelHandler{DB: db}
 
