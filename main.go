@@ -60,7 +60,7 @@ func main() {
 	r.GET("/novels/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
 	r.DELETE("/novels/:id", novelHandler.DeleteNovelByID)
 	r.GET("/search", novelHandler.SearchNovels)
-	r.GET("/health", func(c *gin.Context) {
+	r.GET("/", func(c *gin.Context) {
 		var err error
 		var version string
 		err = db.Raw("SELECT VERSION()").Scan(&version).Error
