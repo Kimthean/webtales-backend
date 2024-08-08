@@ -21,7 +21,7 @@ FROM alpine:latest
 
 # Set the working directory
 # Install curl in the final image as well
-RUN apk add --no-cache curl
+RUN apk add --no-cache wget
 
 # Set the working directory
 WORKDIR /root/
@@ -34,7 +34,8 @@ EXPOSE ${APP_PORT}
 
 # Add health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:${APP_PORT}/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT}/health || exit 1
+
 
 # Command to run the executable
 CMD ["./main"]
