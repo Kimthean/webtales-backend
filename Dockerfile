@@ -1,5 +1,8 @@
 # Use the official Go image as the base image
-FROM golang:1.22.2-alpine AS builder
+FROM golang:1.17-alpine AS builder
+
+# Install wget for health checks
+RUN apk add --no-cache wget
 
 # Set the working directory
 WORKDIR /app
@@ -19,6 +22,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 # Use a smaller base image for the final image
 FROM alpine:latest  
 
+# Install wget in the final image as well
+RUN apk add --no-cache wget
+
 # Set the working directory
 WORKDIR /root/
 
@@ -27,6 +33,10 @@ COPY --from=builder /app/main .
 
 # Expose the port the app runs on
 EXPOSE ${APP_PORT}
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT}/health || exit 1
 
 # Command to run the executable
 CMD ["./main"]
