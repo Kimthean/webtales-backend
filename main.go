@@ -9,6 +9,7 @@ import (
 	"go-novel/worker"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -28,10 +29,27 @@ func main() {
 		panic("failed to connect database")
 	}
 	// db.AutoMigrate(&models.Novel{}, &models.Chapter{})
+	redisURL := cfg.RedisURL
+	redisURL = strings.TrimPrefix(redisURL, "redis://")
+	parts := strings.Split(redisURL, "@")
+	if len(parts) != 2 {
+		log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
+	}
+	password := strings.TrimPrefix(parts[0], ":")
+	address := parts[1]
 
+	// Create Redis client
 	rdb := redis.NewClient(&redis.Options{
-		Addr: cfg.RedisURL,
+		Addr:     address,
+		Password: password,
 	})
+
+	ctx := context.Background()
+	_, err = rdb.Ping(ctx).Result()
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+	log.Println("Successfully connected to Redis")
 
 	// err = utils.InitS3()
 	// if err != nil {
