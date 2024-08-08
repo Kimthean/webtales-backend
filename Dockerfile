@@ -35,3 +35,8 @@ EXPOSE ${APP_PORT}
 
 # Command to run the executable
 CMD ["./main"]
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT}/health || exit 1
+
