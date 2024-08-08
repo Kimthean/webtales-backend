@@ -1,9 +1,6 @@
 # Use the official Go image as the base image
 FROM golang:1.22.2 AS builder
 
-# Install wget for health checks
-RUN apk add --no-cache wget
-
 # Set the working directory
 WORKDIR /app
 
