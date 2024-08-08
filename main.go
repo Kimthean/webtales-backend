@@ -67,6 +67,26 @@ func main() {
 	r.GET("/novels/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
 	r.DELETE("/novels/:id", novelHandler.DeleteNovelByID)
 	r.GET("/search", novelHandler.SearchNovels)
+	r.GET("/", func(c *gin.Context) {
+		var err error
+		var version string
+		err = db.Raw("SELECT VERSION()").Scan(&version).Error
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database is unreachable"})
+			return
+		}
+
+		// Redis check
+		if _, err = rdb.Ping(ctx).Result(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Redis is unreachable"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "success",
+			"message": "All services are healthy!",
+		})
+	})
 
 	crawler := crawler.NewCrawler()
 	w := worker.NewWorker(crawler, db, rdb)
