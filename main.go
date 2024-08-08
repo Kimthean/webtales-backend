@@ -42,13 +42,6 @@ func main() {
 		Password: password,
 	})
 
-	ctx := context.Background()
-	_, err = rdb.Ping(ctx).Result()
-	if err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
-	}
-	log.Println("Successfully connected to Redis")
-
 	// err = utils.InitS3()
 	// if err != nil {
 	// 	log.Fatalf("Failed to initialize S3: %v", err)
@@ -77,7 +70,7 @@ func main() {
 		}
 
 		// Redis check
-		if _, err = rdb.Ping(ctx).Result(); err != nil {
+		if _, err = rdb.Ping(context.Background()).Result(); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Redis is unreachable"})
 			return
 		}
