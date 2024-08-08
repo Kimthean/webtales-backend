@@ -20,10 +20,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 FROM alpine:latest  
 
 # Set the working directory
-# Install curl in the final image as well
-RUN apk add --no-cache wget 
-
-# Set the working directory
 WORKDIR /root/
 
 # Copy the binary from the builder stage
@@ -32,11 +28,5 @@ COPY --from=builder /app/main .
 # Expose the port the app runs on
 EXPOSE ${APP_PORT}
 
-
 # Command to run the executable
 CMD ["./main"]
-
-# Add health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT}/health || exit 1
-
