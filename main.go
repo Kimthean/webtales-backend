@@ -6,6 +6,7 @@ import (
 	"go-novel/crawler"
 	"go-novel/db"
 	handlers "go-novel/handler"
+	"go-novel/models"
 	"go-novel/worker"
 	"log"
 	"net/http"
@@ -26,7 +27,7 @@ func main() {
 	if err != nil {
 		panic("failed to connect database")
 	}
-	// db.AutoMigrate(&models.Novel{}, &models.Chapter{})
+	db.AutoMigrate(&models.Novel{}, &models.Chapter{})
 	redisURL := cfg.RedisURL
 	redisURL = strings.TrimPrefix(redisURL, "redis://")
 	parts := strings.Split(redisURL, "@")
@@ -36,11 +37,14 @@ func main() {
 	password := strings.TrimPrefix(parts[0], ":")
 	address := parts[1]
 
-	// Create Redis client
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     address,
 		Password: password,
 	})
+
+	// rdb := redis.NewClient(&redis.Options{
+	// 	Addr: cfg.RedisURL,
+	// })
 
 	// err = utils.InitS3()
 	// if err != nil {

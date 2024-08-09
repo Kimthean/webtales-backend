@@ -247,7 +247,7 @@ func (w *Worker) processChapters(ctx context.Context) {
 			}
 
 			if strings.Contains(chapterJob.URL, "wuxiabox.com") {
-				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 4).Result()
+				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 5).Result()
 				if err != nil {
 					log.Printf("Error getting wuxiabox.com chapter jobs: %v", err)
 					time.Sleep(time.Second)
@@ -268,7 +268,6 @@ func (w *Worker) processChapters(ctx context.Context) {
 						if err := w.processChapter(jobData); err != nil {
 							log.Printf("Error processing wuxiabox.com chapter: %v", err)
 						} else {
-							// Job processed successfully, remove it from the queue
 							if err := w.Redis.LRem(ctx, chapterQueueKey, 1, jobData).Err(); err != nil {
 								log.Printf("Error removing job from chapter queue: %v", err)
 							}
@@ -336,7 +335,9 @@ func (w *Worker) processChapter(jobData string) error {
 
 	log.Printf("Crawled chapter: %s (NovelID: %d, Number: %d)", chapter.Title, chapterJob.NovelID, chapter.Number)
 
-	if chapter.Content == nil || *chapter.Content == "" {
+	isEnglishSource := strings.Contains(chapterJob.URL, "wuxiabox.com") || strings.Contains(chapterJob.URL, "lightnovelworld.co")
+
+	if !isEnglishSource && (chapter.Content == nil || *chapter.Content == "") {
 		log.Printf("Chapter %s has no content", chapter.Title)
 		return w.enqueueForRetry(chapterJob)
 	}
@@ -346,16 +347,13 @@ func (w *Worker) processChapter(jobData string) error {
 	var existingChapter models.Chapter
 	result := w.DB.Where("novel_id = ? AND number = ?", chapter.NovelID, chapter.Number).First(&existingChapter)
 
-	isEnglishSource := strings.Contains(chapterJob.URL, "wuxiabox.com") || strings.Contains(chapterJob.URL, "lightnovelworld.co")
-
 	if result.Error == nil {
 		existingChapter.Title = chapter.Title
 		existingChapter.Content = chapter.Content
 		existingChapter.URL = chapter.URL
 
 		if isEnglishSource {
-			existingChapter.TranslatedTitle = &chapter.Title
-			existingChapter.TranslatedContent = chapter.Content
+			existingChapter.TranslatedContent = chapter.TranslatedContent
 			existingChapter.TranslationStatus = "completed"
 		}
 

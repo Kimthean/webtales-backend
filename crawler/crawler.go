@@ -34,7 +34,7 @@ func (c *Crawler) newCollector() *colly.Collector {
 
 	collector.Limit(&colly.LimitRule{
 		DomainGlob:  "*wuxiabox.com*",
-		RandomDelay: 3 * time.Second,
+		RandomDelay: 2 * time.Second,
 	})
 	collector.Limit(&colly.LimitRule{
 		DomainGlob:  "*lightnovelworld.co*",
@@ -313,9 +313,9 @@ func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 				chapterURL := el.ChildAttr("a", "href")
 				chapterTitle := el.ChildText(".chapter-title")
 				chapters = append(chapters, models.Chapter{
-					Number: chapterCounter,
-					Title:  chapterTitle,
-					URL:    e.Request.AbsoluteURL(chapterURL),
+					Number:          chapterCounter,
+					TranslatedTitle: &chapterTitle,
+					URL:             e.Request.AbsoluteURL(chapterURL),
 				})
 			})
 
@@ -357,9 +357,9 @@ func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 			chapterTitle := strings.TrimSpace(e.ChildText("strong.chapter-title"))
 			chapterCounter++
 			chapters = append(chapters, models.Chapter{
-				Number: chapterCounter,
-				Title:  chapterTitle,
-				URL:    chapterURL,
+				Number:          chapterCounter,
+				TranslatedTitle: &chapterTitle,
+				URL:             chapterURL,
 			})
 		})
 
@@ -392,7 +392,11 @@ func (c *Crawler) CrawlChapter(chapterURL string, chapterTitle string, chapterNu
 
 	content := contentBuilder.String()
 
-	chapter.Content = &content
+	if strings.Contains(chapterURL, "wuxiabox") || strings.Contains(chapterURL, "lightnovelworld") {
+		chapter.TranslatedContent = &content
+	} else {
+		chapter.Content = &content
+	}
 
 	return chapter, nil
 }
