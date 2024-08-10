@@ -198,30 +198,6 @@ func (h *NovelHandler) GetChapterByID(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-func (h *NovelHandler) GetNovelTranslationStatus(c *gin.Context) {
-	id := c.Param("id")
-	var totalChapters, translatedChapters int64
-	if err := h.DB.Model(&models.Chapter{}).Where("novel_id = ?", id).Count(&totalChapters).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if err := h.DB.Model(&models.Chapter{}).Where("novel_id = ? AND translation_status = ?", id, "completed").Count(&translatedChapters).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	status := "in_progress"
-	if translatedChapters == totalChapters {
-		status = "completed"
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"total_chapters":      totalChapters,
-		"translated_chapters": translatedChapters,
-		"status":              status,
-	})
-}
-
 func (h *NovelHandler) DeleteNovelByID(c *gin.Context) {
 	id := c.Param("id")
 
@@ -309,6 +285,8 @@ func (h *NovelHandler) GetPaginatedNovels(c *gin.Context) {
 		LastChapterTitle   string `json:"last_chapter_title"`
 		LastChapterNumber  int    `json:"last_chapter_number"`
 		TotalChaptersCount int    `json:"total_chapters_count"`
+		TranslatedChapters int    `json:"translated_chapters"`
+		TranslationStatus  string `json:"translation_status"`
 	}
 
 	var totalNovels int64
@@ -321,11 +299,17 @@ func (h *NovelHandler) GetPaginatedNovels(c *gin.Context) {
 		Select("COUNT(id) as total_chapters_count, novel_id").
 		Group("novel_id")
 
+	translatedChapterCountSubquery := h.DB.Table("chapters").
+		Select("COUNT(id) as translated_chapters, novel_id").
+		Where("translation_status = ?", "completed").
+		Group("novel_id")
+
 	query := h.DB.Table("novels").
-		Select("novels.*, c.number as last_chapter_number, c.translated_title as last_chapter_title, cc.total_chapters_count").
+		Select("novels.*, c.number as last_chapter_number, c.translated_title as last_chapter_title, cc.total_chapters_count, tc.translated_chapters").
 		Joins("LEFT JOIN (?) as mc ON mc.novel_id = novels.id", maxChapterIDSubquery).
 		Joins("LEFT JOIN chapters as c ON mc.id = c.id").
 		Joins("LEFT JOIN (?) as cc ON cc.novel_id = novels.id", chapterCountSubquery).
+		Joins("LEFT JOIN (?) as tc ON tc.novel_id = novels.id", translatedChapterCountSubquery).
 		Where("novels.deleted_at IS NULL").
 		Order("novels.updated_at DESC")
 
@@ -337,6 +321,14 @@ func (h *NovelHandler) GetPaginatedNovels(c *gin.Context) {
 	if err := query.Limit(pageSize).Offset(offset).Scan(&novelResponses).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching novels"})
 		return
+	}
+
+	for i := range novelResponses {
+		if novelResponses[i].TranslatedChapters == novelResponses[i].TotalChaptersCount {
+			novelResponses[i].TranslationStatus = "completed"
+		} else {
+			novelResponses[i].TranslationStatus = "in_progress"
+		}
 	}
 
 	response := gin.H{
