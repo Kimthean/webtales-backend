@@ -28,6 +28,7 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		SkipDefaultTransaction: true,
 	})
 	if err != nil {
+
 		return nil, err
 	}
 
@@ -41,7 +42,7 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	sqlDB.SetMaxIdleConns(3)
+	sqlDB.SetMaxIdleConns(5)
 
 	sqlDB.SetMaxOpenConns(100)
 

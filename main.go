@@ -7,6 +7,7 @@ import (
 	"go-novel/db"
 	handlers "go-novel/handler"
 	"go-novel/models"
+	"go-novel/utils"
 	"go-novel/worker"
 	"log"
 	"net/http"
@@ -46,10 +47,10 @@ func main() {
 	// 	Addr: cfg.RedisURL,
 	// })
 
-	// err = utils.InitS3()
-	// if err != nil {
-	// 	log.Fatalf("Failed to initialize S3: %v", err)
-	// }
+	err = utils.InitS3()
+	if err != nil {
+		log.Fatalf("Failed to initialize S3: %v", err)
+	}
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
@@ -64,6 +65,9 @@ func main() {
 	r.GET("/novels/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
 	r.DELETE("/novels/:id", novelHandler.DeleteNovelByID)
 	r.GET("/search", novelHandler.SearchNovels)
+	r.GET("/chapters/missing-translation", novelHandler.ListMissingTranslations)
+	r.POST("/chapters/missing-translation", novelHandler.ReTranslateChapters)
+	r.POST("/mirate-thumbnail", novelHandler.MigrateNovelThumbnails)
 	r.GET("/", func(c *gin.Context) {
 		var err error
 		var version string

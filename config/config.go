@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -15,6 +17,7 @@ type Config struct {
 }
 
 func LoadConfig() (*Config, error) {
+	godotenv.Load()
 	config := &Config{
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		RedisURL:    os.Getenv("REDIS_URL"),
@@ -35,16 +38,15 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("PORT environment variable is not set")
 	}
 
-	// Optional variables (comment out if not needed)
-	// if config.S3AccessKey == "" {
-	//     return nil, fmt.Errorf("S3_ACCESS_KEY environment variable is not set")
-	// }
-	// if config.S3SecretKey == "" {
-	//     return nil, fmt.Errorf("S3_SECRET_KEY environment variable is not set")
-	// }
-	// if config.S3Endpoint == "" {
-	//     return nil, fmt.Errorf("S3_ENDPOINT environment variable is not set")
-	// }
+	if config.S3AccessKey == "" {
+		return nil, fmt.Errorf("S3_ACCESS_KEY environment variable is not set")
+	}
+	if config.S3SecretKey == "" {
+		return nil, fmt.Errorf("S3_SECRET_KEY environment variable is not set")
+	}
+	if config.S3Endpoint == "" {
+		return nil, fmt.Errorf("S3_ENDPOINT environment variable is not set")
+	}
 
 	return config, nil
 }

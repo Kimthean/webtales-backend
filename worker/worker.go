@@ -7,6 +7,7 @@ import (
 	"go-novel/crawler"
 	"go-novel/lib"
 	"go-novel/models"
+	"go-novel/utils"
 	"log"
 	"strings"
 	"sync"
@@ -153,6 +154,15 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		return w.enqueueNovelForRetry(novelJob)
 	}
 
+	if novel.Thumbnail != nil {
+		s3URL, err := utils.DownloadAndUploadImage(*novel.Thumbnail, "cover")
+		if err != nil {
+			log.Printf("Error downloading or uploading thumbnail: %v", err)
+		} else {
+			novel.Thumbnail = &s3URL
+		}
+	}
+
 	log.Println("Pinging Redis...")
 	pong, err := w.Redis.Ping(context.Background()).Result()
 	if err != nil {
@@ -246,7 +256,7 @@ func (w *Worker) processChapters(ctx context.Context) {
 				continue
 			}
 
-			if strings.Contains(chapterJob.URL, "wuxiabox.com") {
+			if strings.Contains(chapterJob.URL, "wuxiabox.com") || strings.Contains(chapterJob.URL, "lightnovelworld.co") {
 				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 5).Result()
 				if err != nil {
 					log.Printf("Error getting wuxiabox.com chapter jobs: %v", err)
@@ -589,6 +599,7 @@ func (w *Worker) enqueue(queueKey string, value string) error {
 	if err := w.Redis.RPush(ctx, queueKey, value).Err(); err != nil {
 		return fmt.Errorf("enqueueing to %s: %w", queueKey, err)
 	}
+
 	return nil
 }
 

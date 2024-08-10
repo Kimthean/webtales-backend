@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"go-novel/lib"
 	"go-novel/models"
+	"go-novel/utils"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -345,4 +348,88 @@ func (h *NovelHandler) GetPaginatedNovels(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+func (h *NovelHandler) ListMissingTranslations(c *gin.Context) {
+	var chapters []models.Chapter
+	// Assuming `db` is your database connection and `models.Chapter` is your model
+	result := h.DB.Where("translated_content IS NULL OR translation_status <> 'completed'").Find(&chapters)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching chapters"})
+		return
+	}
+	c.JSON(http.StatusOK, chapters)
+}
+
+func (h *NovelHandler) ReTranslateChapters(c *gin.Context) {
+	var chapters []models.Chapter
+	// Fetch chapters missing translation
+	result := h.DB.Where("translated_content IS NULL OR translated_title IS NULL OR translation_status <> 'completed'").Find(&chapters)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching chapters"})
+		return
+	}
+	successCount := 0
+	failureCount := 0
+	failures := make([]uint, 0)
+
+	for _, chapter := range chapters {
+		err := h.TranslateChapter(&chapter)
+		if err != nil {
+			failureCount++
+			failures = append(failures, chapter.ID)
+			continue
+		}
+		successCount++
+	}
+
+	response := gin.H{
+		"message":      "Re-translation process initiated",
+		"successCount": successCount,
+		"failureCount": failureCount,
+		"failures":     failures,
+	}
+
+	c.JSON(http.StatusOK, response)
+
+}
+
+func (h *NovelHandler) TranslateChapter(chapter *models.Chapter) error {
+	translatedContent, err := lib.Translate(*chapter.Content)
+	if err != nil {
+		return err
+	}
+
+	chapter.TranslatedContent = translatedContent
+	chapter.TranslationStatus = "completed"
+
+	result := h.DB.Save(chapter)
+	return result.Error
+}
+
+func (h *NovelHandler) MigrateNovelThumbnails(c *gin.Context) {
+	var novels []models.Novel
+	// Fetch all novels with a thumbnail URL
+	result := h.DB.Find(&novels, "thumbnail IS NOT NULL")
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching novels"})
+		return
+	}
+
+	for _, novel := range novels {
+		if novel.Thumbnail != nil {
+			s3URL, err := utils.DownloadAndUploadImage(*novel.Thumbnail, "cover")
+			if err != nil {
+				log.Printf("Error migrating thumbnail for novel ID %d: %v", novel.ID, err)
+				continue
+			}
+			novel.Thumbnail = &s3URL
+			result := h.DB.Save(&novel)
+			if result.Error != nil {
+				log.Printf("Error updating novel ID %d: %v", novel.ID, result.Error)
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Migration completed"})
 }
