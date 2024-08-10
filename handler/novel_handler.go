@@ -198,6 +198,30 @@ func (h *NovelHandler) GetChapterByID(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+func (h *NovelHandler) GetNovelTranslationStatus(c *gin.Context) {
+	id := c.Param("id")
+	var totalChapters, translatedChapters int64
+	if err := h.DB.Model(&models.Chapter{}).Where("novel_id = ?", id).Count(&totalChapters).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.DB.Model(&models.Chapter{}).Where("novel_id = ? AND translation_status = ?", id, "completed").Count(&translatedChapters).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	status := "in_progress"
+	if translatedChapters == totalChapters {
+		status = "completed"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total_chapters":      totalChapters,
+		"translated_chapters": translatedChapters,
+		"status":              status,
+	})
+}
+
 func (h *NovelHandler) DeleteNovelByID(c *gin.Context) {
 	id := c.Param("id")
 

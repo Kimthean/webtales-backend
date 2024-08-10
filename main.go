@@ -62,6 +62,7 @@ func main() {
 	r.GET("/novels", novelHandler.GetPaginatedNovels)
 	r.GET("/latest-novels", novelHandler.GetLatestNovels)
 	r.GET("/novels/:id/chapter/:number", novelHandler.GetChapterByID)
+	r.GET("/novels/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
 	r.DELETE("/novels/:id", novelHandler.DeleteNovelByID)
 	r.GET("/search", novelHandler.SearchNovels)
 	r.GET("/chapters/missing-translation", novelHandler.ListMissingTranslations)
