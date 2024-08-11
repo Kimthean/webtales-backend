@@ -11,6 +11,7 @@ import (
 	"go-novel/worker"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -77,7 +78,6 @@ func main() {
 			return
 		}
 
-		// Redis check
 		if _, err = rdb.Ping(context.Background()).Result(); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Redis is unreachable"})
 			return
@@ -102,6 +102,21 @@ func main() {
 			return
 		}
 		c.String(http.StatusOK, "Novel queued for crawling")
+	})
+
+	r.POST("/update/:id", func(c *gin.Context) {
+		id, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+			return
+		}
+		err = w.ProcessUpdate(uint(id))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Update process initiated"})
 	})
 
 	r.Run(":" + cfg.ServerPort)

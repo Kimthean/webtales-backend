@@ -425,7 +425,6 @@ func (h *NovelHandler) TranslateChapter(chapter *models.Chapter) error {
 
 func (h *NovelHandler) MigrateNovelThumbnails(c *gin.Context) {
 	var novels []models.Novel
-	// Fetch all novels with a thumbnail URL
 	result := h.DB.Find(&novels, "thumbnail IS NOT NULL")
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching novels"})
@@ -449,3 +448,4 @@ func (h *NovelHandler) MigrateNovelThumbnails(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Migration completed"})
 }
+

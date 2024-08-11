@@ -65,7 +65,7 @@ func (cj *ChapterJob) IncrementRetries() { cj.Retries++ }
 
 type TranslationJob struct {
 	ChapterID uint   `json:"chapter_id"`
-	Field     string `json:"field"` // "title" or "content"
+	Field     string `json:"field"`
 	Text      string `json:"text"`
 	Retries   int    `json:"retries"`
 }
@@ -171,7 +171,7 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		log.Printf("Redis ping successful: %s", pong)
 	}
 
-	if !strings.Contains(novelJob.URL, "wuxiabox.com") || strings.Contains(novelJob.URL, "lightnovelworld.co") {
+	if !strings.Contains(novelJob.URL, "wuxiabox.com") || strings.Contains(novelJob.URL, "lightnovelworld.co") || strings.Contains(novelJob.URL, "wuxiaspot.com") {
 		var translateTitle, translateAuthor, translateDescription string
 
 		if novel.Title != nil {
@@ -256,7 +256,7 @@ func (w *Worker) processChapters(ctx context.Context) {
 				continue
 			}
 
-			if strings.Contains(chapterJob.URL, "wuxiabox.com") || strings.Contains(chapterJob.URL, "lightnovelworld.co") {
+			if strings.Contains(chapterJob.URL, "wuxiabox.com") || strings.Contains(chapterJob.URL, "lightnovelworld.co") || strings.Contains(chapterJob.URL, "wuxiaspot.com") {
 				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 5).Result()
 				if err != nil {
 					log.Printf("Error getting wuxiabox.com chapter jobs: %v", err)
@@ -345,7 +345,7 @@ func (w *Worker) processChapter(jobData string) error {
 
 	log.Printf("Crawled chapter: %s (NovelID: %d, Number: %d)", chapter.Title, chapterJob.NovelID, chapter.Number)
 
-	isEnglishSource := strings.Contains(chapterJob.URL, "wuxiabox.com") || strings.Contains(chapterJob.URL, "lightnovelworld.co")
+	isEnglishSource := strings.Contains(chapterJob.URL, "wuxiabox.com") || strings.Contains(chapterJob.URL, "lightnovelworld.co") || strings.Contains(chapterJob.URL, "wuxiaspot.com")
 
 	if !isEnglishSource && (chapter.Content == nil || *chapter.Content == "") {
 		log.Printf("Chapter %s has no content", chapter.Title)
@@ -628,4 +628,63 @@ func (w *Worker) isChapterProcessed(ctx context.Context, novelID uint, chapterNu
 func (w *Worker) markChapterProcessed(ctx context.Context, novelID uint, chapterNumber int) error {
 	key := fmt.Sprintf("%s:%d:%d", finishedChaptersKey, novelID, chapterNumber)
 	return w.Redis.SAdd(ctx, finishedChaptersKey, key).Err()
+}
+
+func (w *Worker) ProcessUpdate(novelID uint) error {
+	var novelURL string
+	var existingNovel models.Novel
+	result := w.DB.First(&existingNovel, novelID)
+	if result.Error != nil {
+		if result.Error == gorm.ErrRecordNotFound {
+			log.Printf("Novel with ID %d not found.", novelID)
+			return fmt.Errorf("novel not found")
+		} else if result.Error != nil {
+			log.Printf("Error fetching novel: %v", result.Error)
+			return result.Error
+		}
+	}
+	novelURL = *existingNovel.URL
+
+	novel, err := w.Crawler.CrawlNovel(novelURL)
+	if err != nil {
+		log.Printf("Error crawling novel: %v", err)
+		return err
+	}
+
+	var existingChapters []models.Chapter
+	result = w.DB.Where("novel_id = ?", existingNovel.ID).Find(&existingChapters)
+	if result.Error != nil {
+		log.Printf("Error fetching existing chapters for novel ID %d: %v", existingNovel.ID, result.Error)
+		return result.Error
+	}
+
+	existingChapterNumbers := make(map[int]bool)
+	for _, chapter := range existingChapters {
+		existingChapterNumbers[chapter.Number] = true
+	}
+
+	for _, chapter := range novel.Chapters {
+		if _, exists := existingChapterNumbers[chapter.Number]; !exists {
+			newChapter := models.Chapter{
+				NovelID:           existingNovel.ID,
+				Number:            chapter.Number,
+				Title:             chapter.Title,
+				URL:               chapter.URL,
+				TranslationStatus: "pending",
+			}
+			if err := w.DB.Create(&newChapter).Error; err != nil {
+				log.Printf("Error saving new chapter %d: %v", chapter.Number, err)
+				continue
+			}
+			log.Printf("New chapter %d saved successfully", chapter.Number)
+
+			if err := w.EnqueueChapter(chapter.URL, existingNovel.ID, chapter.Title, chapter.Number); err != nil {
+				log.Printf("Error enqueuing chapter %d: %v", chapter.Number, err)
+			} else {
+				log.Printf("New chapter %d enqueued successfully", chapter.Number)
+			}
+		}
+	}
+
+	return nil
 }

@@ -60,6 +60,10 @@ func (c *Crawler) setLimitRules(collector *colly.Collector) {
 		RandomDelay: 2 * time.Second,
 	})
 	collector.Limit(&colly.LimitRule{
+		DomainGlob:  "*wuxiaspot.com*",
+		RandomDelay: 2 * time.Second,
+	})
+	collector.Limit(&colly.LimitRule{
 		DomainGlob:  "*lightnovelworld.co*",
 		RandomDelay: 4 * time.Second,
 	})
@@ -93,10 +97,12 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 	switch {
 	case strings.Contains(url, "9999txt.cc"):
 		novel, err = c.crawl9999txt(url)
-	case strings.Contains(url, "uukanshu.cc/"):
+	case strings.Contains(url, "uukanshu.cc"):
 		novel, err = c.crawlUukanshu(url)
-	case strings.Contains(url, "www.wuxiabox.com/"):
+	case strings.Contains(url, "wuxiabox.com"):
 		novel, err = c.crawlWuxiabox(url)
+	case strings.Contains(url, "wuxiaspot.com"):
+		novel, err = c.crawlWuxiaspot(url)
 	case strings.Contains(url, "lightnovelworld.co"):
 		novel, err = c.crawlLightNovelWorld(url)
 	default:
@@ -241,6 +247,47 @@ func (c *Crawler) crawlWuxiabox(url string) (*models.Novel, error) {
 	return novel, nil
 }
 
+func (c *Crawler) crawlWuxiaspot(url string) (*models.Novel, error) {
+	novel := &models.Novel{URL: &url}
+	collector := c.newCollector()
+
+	collector.OnHTML(".novel-header", func(e *colly.HTMLElement) {
+		title := e.ChildText(".novel-title")
+		novel.Title = &title
+
+		altTitle := e.ChildText(".alternative-title")
+		novel.RawTitle = &altTitle
+
+		author := e.ChildText(".author span.zz-item")
+		novel.Author = &author
+
+		imgSrc := e.ChildAttr(".fixed-img img", "src")
+		if imgSrc == "/static/picture/placeholder-158.jpg" {
+			imgSrc = e.ChildAttr(".fixed-img img", "data-src")
+		}
+		imageURL := e.Request.AbsoluteURL(imgSrc)
+		novel.Thumbnail = &imageURL
+	})
+
+	collector.OnHTML("#info", func(e *colly.HTMLElement) {
+		detailedSummary := e.ChildText(".summary .content")
+		novel.Description = &detailedSummary
+	})
+
+	err := collector.Visit(url)
+	if err != nil {
+		return nil, fmt.Errorf("visiting novel page: %w", err)
+	}
+
+	chapters, err := c.extractChapters(url)
+	if err != nil {
+		log.Printf("Error extracting chapters: %s", err)
+	}
+	novel.Chapters = chapters
+
+	return novel, nil
+}
+
 func (c *Crawler) crawlLightNovelWorld(url string) (*models.Novel, error) {
 	novel := &models.Novel{URL: &url}
 	collector := c.newCollector()
@@ -301,6 +348,8 @@ func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 	case strings.Contains(url, "9999txt.cc"):
 		chapters, err = c.extract9999txtChapters(url)
 	case strings.Contains(url, "wuxiabox.com"):
+		chapters, err = c.extractWuxiaboxChapters(url)
+	case strings.Contains(url, "wuxiaspot.com"):
 		chapters, err = c.extractWuxiaboxChapters(url)
 	case strings.Contains(url, "lightnovelworld.co/"):
 		chapters, err = c.extractLightNovelWorldChapters(url)
@@ -447,7 +496,7 @@ func (c *Crawler) CrawlChapter(chapterURL string, chapterTitle string, chapterNu
 		return nil, fmt.Errorf("crawling chapter content: %w", err)
 	}
 
-	if strings.Contains(chapterURL, "wuxiabox") || strings.Contains(chapterURL, "lightnovelworld") {
+	if strings.Contains(chapterURL, "wuxiabox") || strings.Contains(chapterURL, "lightnovelworld") || strings.Contains(chapterURL, "wuxiaspot") {
 		chapter.TranslatedContent = &content
 	} else {
 		chapter.Content = &content
@@ -466,6 +515,8 @@ func (c *Crawler) crawlChapterContent(pageURL string) (string, error) {
 	case strings.Contains(pageURL, "uukanshu.cc"):
 		err = c.crawlUukanshuChapterContent(pageURL, &contentBuilder)
 	case strings.Contains(pageURL, "wuxiabox.com"):
+		err = c.crawlWuxiaboxChapterContent(pageURL, &contentBuilder)
+	case strings.Contains(pageURL, "wuxiaspot.com"):
 		err = c.crawlWuxiaboxChapterContent(pageURL, &contentBuilder)
 	case strings.Contains(pageURL, "lightnovelworld.co"):
 		err = c.crawlLightNovelWorldChapterContent(pageURL, &contentBuilder)
