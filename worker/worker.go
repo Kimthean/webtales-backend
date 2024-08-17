@@ -137,6 +137,12 @@ func (w *Worker) processQueue(ctx context.Context, queueKey string, processor fu
 	}
 }
 
+func isEnglishSource(url string) bool {
+	return strings.Contains(url, "wuxiabox.com") ||
+		strings.Contains(url, "lightnovelworld.co") ||
+		strings.Contains(url, "wuxiaspot.com")
+}
+
 func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 	var novelJob NovelJob
 	if err := json.Unmarshal([]byte(jobData), &novelJob); err != nil {
@@ -171,20 +177,13 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		log.Printf("Redis ping successful: %s", pong)
 	}
 
-	if !strings.Contains(novelJob.URL, "wuxiabox.com") || strings.Contains(novelJob.URL, "lightnovelworld.co") || strings.Contains(novelJob.URL, "wuxiaspot.com") {
-		var translateTitle, translateAuthor, translateDescription string
+	if !isEnglishSource(novelJob.URL) {
+		var translateTitle, translateDescription string
 
 		if novel.Title != nil {
 			translated := w.translateAsync(*novel.Title)
 			if translated != nil {
 				translateTitle = *translated
-			}
-		}
-
-		if novel.Author != nil {
-			translated := w.translateAsync(*novel.Author)
-			if translated != nil {
-				translateAuthor = *translated
 			}
 		}
 
@@ -197,7 +196,6 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 
 		novel.RawTitle = novel.Title
 		novel.Title = &translateTitle
-		novel.Author = &translateAuthor
 		novel.Description = &translateDescription
 	}
 
@@ -256,7 +254,7 @@ func (w *Worker) processChapters(ctx context.Context) {
 				continue
 			}
 
-			if strings.Contains(chapterJob.URL, "wuxiabox.com") || strings.Contains(chapterJob.URL, "lightnovelworld.co") || strings.Contains(chapterJob.URL, "wuxiaspot.com") {
+			if isEnglishSource(chapterJob.URL) {
 				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 5).Result()
 				if err != nil {
 					log.Printf("Error getting wuxiabox.com chapter jobs: %v", err)
@@ -345,10 +343,8 @@ func (w *Worker) processChapter(jobData string) error {
 
 	log.Printf("Crawled chapter: %s (NovelID: %d, Number: %d)", chapter.Title, chapterJob.NovelID, chapter.Number)
 
-	isEnglishSource := strings.Contains(chapterJob.URL, "wuxiabox.com") || strings.Contains(chapterJob.URL, "lightnovelworld.co") || strings.Contains(chapterJob.URL, "wuxiaspot.com")
-
-	if !isEnglishSource && (chapter.Content == nil || *chapter.Content == "") {
-		log.Printf("Chapter %s has no content", chapter.Title)
+	if !isEnglishSource(chapter.URL) && (chapter.Content == nil || *chapter.Content == "") {
+		log.Printf("Chapter %s has no content", chapter.URL)
 		return w.enqueueForRetry(chapterJob)
 	}
 
@@ -362,7 +358,7 @@ func (w *Worker) processChapter(jobData string) error {
 		existingChapter.Content = chapter.Content
 		existingChapter.URL = chapter.URL
 
-		if isEnglishSource {
+		if isEnglishSource(chapterJob.URL) {
 			existingChapter.TranslatedContent = chapter.TranslatedContent
 			existingChapter.TranslationStatus = "completed"
 		}
@@ -372,7 +368,7 @@ func (w *Worker) processChapter(jobData string) error {
 			return w.enqueueForRetry(chapterJob)
 		}
 
-		if !isEnglishSource {
+		if !isEnglishSource(chapterJob.URL) {
 			if existingChapter.TranslatedTitle == nil {
 				w.enqueueTranslation(existingChapter.ID, "title", existingChapter.Title)
 			}

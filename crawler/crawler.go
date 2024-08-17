@@ -229,7 +229,13 @@ func (c *Crawler) crawlWuxiabox(url string) (*models.Novel, error) {
 	})
 
 	collector.OnHTML("#info", func(e *colly.HTMLElement) {
-		detailedSummary := e.ChildText(".summary .content")
+		var descriptionBuilder strings.Builder
+
+		e.ForEach(".summary .content p", func(_ int, el *colly.HTMLElement) {
+			descriptionBuilder.WriteString(el.Text + "\n\n")
+		})
+
+		detailedSummary := descriptionBuilder.String()
 		novel.Description = &detailedSummary
 	})
 
@@ -258,7 +264,7 @@ func (c *Crawler) crawlWuxiaspot(url string) (*models.Novel, error) {
 		altTitle := e.ChildText(".alternative-title")
 		novel.RawTitle = &altTitle
 
-		author := e.ChildText(".author span.zz-item")
+		author := e.ChildText("span[itemprop='author'] a")
 		novel.Author = &author
 
 		imgSrc := e.ChildAttr(".fixed-img img", "src")
@@ -270,7 +276,13 @@ func (c *Crawler) crawlWuxiaspot(url string) (*models.Novel, error) {
 	})
 
 	collector.OnHTML("#info", func(e *colly.HTMLElement) {
-		detailedSummary := e.ChildText(".summary .content")
+		var descriptionBuilder strings.Builder
+
+		e.ForEach(".summary .content p", func(_ int, el *colly.HTMLElement) {
+			descriptionBuilder.WriteString(el.Text + "\n\n")
+		})
+
+		detailedSummary := descriptionBuilder.String()
 		novel.Description = &detailedSummary
 	})
 

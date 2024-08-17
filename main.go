@@ -5,21 +5,21 @@ import (
 	"go-novel/config"
 	"go-novel/crawler"
 	"go-novel/db"
-	handlers "go-novel/handler"
+	auth "go-novel/handler/auth"
+	novel "go-novel/handler/novel"
+	"go-novel/middleware"
 	"go-novel/models"
 	"go-novel/utils"
 	"go-novel/worker"
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 )
 
 func main() {
-
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
@@ -29,46 +29,95 @@ func main() {
 	if err != nil {
 		panic("failed to connect database")
 	}
-	db.AutoMigrate(&models.Novel{}, &models.Chapter{})
-	redisURL := cfg.RedisURL
-	redisURL = strings.TrimPrefix(redisURL, "redis://")
-	parts := strings.Split(redisURL, "@")
-	if len(parts) != 2 {
-		log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
-	}
-	password := strings.TrimPrefix(parts[0], ":")
-	address := parts[1]
+	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{})
+
+	// Redis initialization (commented out for now)
+	// redisURL := cfg.RedisURL
+	// redisURL = strings.TrimPrefix(redisURL, "redis://")
+	// parts := strings.Split(redisURL, "@")
+	// if len(parts) != 2 {
+	// 	log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
+	// }
+	// password := strings.TrimPrefix(parts[0], ":")
+	// address := parts[1]
+	// rdb := redis.NewClient(&redis.Options{
+	// 	Addr:     address,
+	// 	Password: password,
+	// })
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     address,
-		Password: password,
+		Addr: cfg.RedisURL,
 	})
-
-	// rdb := redis.NewClient(&redis.Options{
-	// 	Addr: cfg.RedisURL,
-	// })
 
 	err = utils.InitS3()
 	if err != nil {
 		log.Fatalf("Failed to initialize S3: %v", err)
 	}
 
-	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
-	novelHandler := &handlers.NovelHandler{DB: db}
+	// Crawler and worker setup
+	crawler := crawler.NewCrawler()
+	w := worker.NewWorker(crawler, db, rdb)
+	go w.Start(context.Background())
 
-	r.GET("/novels/:id", novelHandler.GetNovel)
-	r.GET("/novels/:id/chapters", novelHandler.GetNovelChapters)
-	r.GET("/novels/all", novelHandler.GetNovels)
-	r.GET("/novels", novelHandler.GetPaginatedNovels)
-	r.GET("/latest-novels", novelHandler.GetLatestNovels)
-	r.GET("/novels/:id/chapter/:number", novelHandler.GetChapterByID)
-	r.GET("/novels/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
-	r.DELETE("/novels/:id", novelHandler.DeleteNovelByID)
-	r.GET("/search", novelHandler.SearchNovels)
-	r.GET("/chapters/missing-translation", novelHandler.ListMissingTranslations)
-	r.POST("/chapters/missing-translation", novelHandler.ReTranslateChapters)
-	r.POST("/mirate-thumbnail", novelHandler.MigrateNovelThumbnails)
+	// gin.SetMode(gin.ReleaseMode)
+	r := gin.Default()
+	novelHandler := &novel.NovelHandler{DB: db}
+	authHandler := &auth.AuthHandler{DB: db}
+
+	// Novel routes
+	novelRoutes := r.Group("/novels")
+	{
+		novelRoutes.GET("/:id", novelHandler.GetNovel)
+		novelRoutes.GET("/:id/chapters", novelHandler.GetNovelChapters)
+		novelRoutes.GET("/all", novelHandler.GetNovels)
+		novelRoutes.GET("", novelHandler.GetPaginatedNovels)
+		novelRoutes.GET("/:id/chapter/:number", novelHandler.GetChapterByID)
+		novelRoutes.GET("/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
+		novelRoutes.GET("/search", novelHandler.SearchNovels)
+	}
+
+	adminRoutes := r.Group("/admin")
+	adminRoutes.Use(middleware.AuthMiddleware(), middleware.AdminMiddleware())
+	{
+		adminRoutes.GET("/chapters/missing-translation", novelHandler.ListMissingTranslations)
+		adminRoutes.POST("/chapters/missing-translation", novelHandler.ReTranslateChapters)
+		adminRoutes.POST("/migrate-thumbnail", novelHandler.MigrateNovelThumbnails)
+		novelRoutes.DELETE("/:id", novelHandler.DeleteNovelByID)
+		adminRoutes.POST("/update/:id", func(c *gin.Context) {
+			id, err := strconv.Atoi(c.Param("id"))
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+				return
+			}
+			err = w.ProcessUpdate(uint(id))
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"message": "Update process initiated"})
+		})
+		adminRoutes.POST("/crawl", func(c *gin.Context) {
+			url := c.Query("url")
+			log.Printf("Crawling %s", url)
+			err := w.EnqueueNovel(url)
+			if err != nil {
+				c.String(http.StatusInternalServerError, "Failed to enqueue novel")
+				return
+			}
+			c.String(http.StatusOK, "Novel queued for crawling")
+		})
+
+	}
+
+	// Auth routes
+	authRoutes := r.Group("auth")
+	{
+		authRoutes.POST("/signup", authHandler.SignUp)
+		authRoutes.POST("/login", authHandler.Login)
+	}
+
+	// Health check
 	r.GET("/", func(c *gin.Context) {
 		var err error
 		var version string
@@ -87,36 +136,6 @@ func main() {
 			"status":  "success",
 			"message": "All services are healthy!",
 		})
-	})
-
-	crawler := crawler.NewCrawler()
-	w := worker.NewWorker(crawler, db, rdb)
-	go w.Start(context.Background())
-
-	r.POST("/crawl", func(c *gin.Context) {
-		url := c.Query("url")
-		log.Printf("Crawling %s", url)
-		err := w.EnqueueNovel(url)
-		if err != nil {
-			c.String(http.StatusInternalServerError, "Failed to enqueue novel")
-			return
-		}
-		c.String(http.StatusOK, "Novel queued for crawling")
-	})
-
-	r.POST("/update/:id", func(c *gin.Context) {
-		id, err := strconv.Atoi(c.Param("id"))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
-			return
-		}
-		err = w.ProcessUpdate(uint(id))
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"message": "Update process initiated"})
 	})
 
 	r.Run(":" + cfg.ServerPort)

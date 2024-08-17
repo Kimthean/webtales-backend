@@ -1,6 +1,7 @@
 package db
 
 import (
+	"go-novel/models"
 	"log"
 	"os"
 	"time"
@@ -32,17 +33,17 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// err = db.AutoMigrate(&models.Novel{}, &models.Chapter{})
-	// if err != nil {
-	// 	return nil, err
-	// }
+	err = db.AutoMigrate(&models.Novel{}, &models.Chapter{})
+	if err != nil {
+		return nil, err
+	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, err
 	}
 
-	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetMaxIdleConns(30)
 
 	sqlDB.SetMaxOpenConns(100)
 
