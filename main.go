@@ -32,6 +32,7 @@ func main() {
 	}
 	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{})
 
+	// Redis initialization (commented out for now)
 	redisURL := cfg.RedisURL
 	redisURL = strings.TrimPrefix(redisURL, "redis://")
 	parts := strings.Split(redisURL, "@")
@@ -82,7 +83,8 @@ func main() {
 		adminRoutes.GET("/chapters/missing-translation", novelHandler.ListMissingTranslations)
 		adminRoutes.POST("/chapters/missing-translation", novelHandler.ReTranslateChapters)
 		adminRoutes.POST("/migrate-thumbnail", novelHandler.MigrateNovelThumbnails)
-		novelRoutes.DELETE("/:id", novelHandler.DeleteNovelByID)
+		adminRoutes.DELETE("/:id", novelHandler.DeleteNovelByID)
+		adminRoutes.GET("/users", authHandler.GetAllUsers)
 		adminRoutes.POST("/update/:id", func(c *gin.Context) {
 			id, err := strconv.Atoi(c.Param("id"))
 			if err != nil {

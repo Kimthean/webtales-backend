@@ -4,6 +4,7 @@ import (
 	"go-novel/models"
 	"net/http"
 
+	"go-novel/types"
 	"go-novel/utils"
 
 	"github.com/gin-gonic/gin"
@@ -16,20 +17,23 @@ type AuthHandler struct {
 }
 
 func (h *AuthHandler) SignUp(c *gin.Context) {
-	email := c.PostForm("email")
-	password := c.PostForm("password")
-	name := c.PostForm("username")
+	var req types.SignupRequest
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not hash password"})
 		return
 	}
 
 	user := &models.User{
-		Email:        email,
+		Email:        req.Email,
 		PasswordHash: string(hashedPassword),
-		Username:     name,
+		Username:     req.Username,
 	}
 
 	result := h.DB.Create(&user)
@@ -42,18 +46,22 @@ func (h *AuthHandler) SignUp(c *gin.Context) {
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
-	email := c.PostForm("email")
-	password := c.PostForm("password")
+	var req types.LoginRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
 
 	var user models.User
 
-	result := h.DB.Where("email = ?", email).First(&user)
+	result := h.DB.Where("email = ?", req.Email).First(&user)
 	if result.Error != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Email not found"})
 		return
 	}
 
-	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials"})
 		return
@@ -66,4 +74,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"token": token})
+}
+
+func (h *AuthHandler) GetAllUsers(c *gin.Context) {
+	var users []models.User
+	h.DB.Find(&users)
+	c.JSON(http.StatusOK, gin.H{"data": users})
 }
