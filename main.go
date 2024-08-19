@@ -73,6 +73,7 @@ func main() {
 		novelRoutes.GET("/all", novelHandler.GetNovels)
 		novelRoutes.GET("", novelHandler.GetPaginatedNovels)
 		novelRoutes.GET("/:id/chapter/:number", novelHandler.GetChapterByID)
+		// novelRoutes.GET("/:id/chapters", novelHandler.GetNovelChaptersWithPage)
 		novelRoutes.GET("/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
 		novelRoutes.GET("/search", novelHandler.SearchNovels)
 	}
@@ -91,7 +92,7 @@ func main() {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
 				return
 			}
-			err = w.ProcessUpdate(uint(id))
+			err = w.EnqueueUpdate(uint(id))
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
