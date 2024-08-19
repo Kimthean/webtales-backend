@@ -73,7 +73,7 @@ func main() {
 		novelRoutes.GET("/all", novelHandler.GetNovels)
 		novelRoutes.GET("", novelHandler.GetPaginatedNovels)
 		novelRoutes.GET("/:id/chapter/:number", novelHandler.GetChapterByID)
-		// novelRoutes.GET("/:id/chapters", novelHandler.GetNovelChaptersWithPage)
+		novelRoutes.GET("/:id/paginate-chapters", novelHandler.GetNovelChaptersWithPage)
 		novelRoutes.GET("/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
 		novelRoutes.GET("/search", novelHandler.SearchNovels)
 	}
