@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"go-novel/lib"
 	"go-novel/models"
 	"go-novel/utils"
@@ -411,8 +412,14 @@ func (h *NovelHandler) ReTranslateChapters(c *gin.Context) {
 }
 
 func (h *NovelHandler) TranslateChapter(chapter *models.Chapter) error {
+	if chapter.Content == nil {
+		log.Printf("Chapter ID %d has no content to translate", chapter.ID)
+		return fmt.Errorf("chapter content is nil")
+	}
+
 	translatedContent, err := lib.Translate(*chapter.Content)
 	if err != nil {
+		log.Printf("Error translating chapter ID %d: %v", chapter.ID, err)
 		return err
 	}
 
@@ -448,4 +455,3 @@ func (h *NovelHandler) MigrateNovelThumbnails(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Migration completed"})
 }
-

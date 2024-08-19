@@ -43,11 +43,11 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	sqlDB.SetMaxIdleConns(30)
+	sqlDB.SetMaxIdleConns(10)
 
 	sqlDB.SetMaxOpenConns(100)
 
-	sqlDB.SetConnMaxLifetime(30 * time.Minute)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 
 	return db, nil
 }

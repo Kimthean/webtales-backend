@@ -9,6 +9,7 @@ import (
 	"go-novel/models"
 	"go-novel/utils"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ const (
 	retryQueueKey       = "retry_queue"
 	translationQueueKey = "translation_queue"
 	finishedChaptersKey = "finished_chapters"
+	updateQueueKey      = "update_queue"
 
 	maxRetries    = 5
 	maxConcurrent = 20
@@ -73,6 +75,14 @@ type TranslationJob struct {
 func (tj *TranslationJob) GetRetries() int   { return tj.Retries }
 func (tj *TranslationJob) IncrementRetries() { tj.Retries++ }
 
+type UpdateJob struct {
+	NovelID uint `json:"novel_id"`
+	Retries int  `json:"retries"`
+}
+
+func (uj *UpdateJob) GetRetries() int   { return uj.Retries }
+func (uj *UpdateJob) IncrementRetries() { uj.Retries++ }
+
 func NewWorker(crawler *crawler.Crawler, db *gorm.DB, redis *redis.Client) *Worker {
 	if crawler == nil {
 		log.Fatal("Crawler cannot be nil")
@@ -102,6 +112,7 @@ func (w *Worker) Start(ctx context.Context) {
 	go w.processChapters(ctx)
 	go w.processRetryQueue(ctx)
 	go w.processTranslationQueue(ctx)
+	go w.processQueue(ctx, updateQueueKey, w.processUpdate)
 }
 
 func (w *Worker) processQueue(ctx context.Context, queueKey string, processor func(context.Context, string) error) {
@@ -254,12 +265,22 @@ func (w *Worker) processChapters(ctx context.Context) {
 				continue
 			}
 
+			var jobs []string
 			if isEnglishSource(chapterJob.URL) {
-				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 5).Result()
-				if err != nil {
-					log.Printf("Error getting wuxiabox.com chapter jobs: %v", err)
-					time.Sleep(time.Second)
-					continue
+				if strings.Contains(chapterJob.URL, "lightnovelworld.co") {
+					jobs, err = w.Redis.LRange(ctx, chapterQueueKey, 0, 9).Result()
+					if err != nil {
+						log.Printf("Error getting lightnovelworld.co chapter jobs: %v", err)
+						time.Sleep(time.Second)
+						continue
+					}
+				} else {
+					jobs, err = w.Redis.LRange(ctx, chapterQueueKey, 0, 4).Result()
+					if err != nil {
+						log.Printf("Error getting chapter jobs: %v %e", chapterJob.URL, err)
+						time.Sleep(time.Second)
+						continue
+					}
 				}
 
 				var wg sync.WaitGroup
@@ -274,7 +295,7 @@ func (w *Worker) processChapters(ctx context.Context) {
 						defer w.semaphore.Release(1)
 
 						if err := w.processChapter(jobData); err != nil {
-							log.Printf("Error processing wuxiabox.com chapter: %v", err)
+							log.Printf("Error processing chapter: %v", err)
 						} else {
 							if err := w.Redis.LRem(ctx, chapterQueueKey, 1, jobData).Err(); err != nil {
 								log.Printf("Error removing job from chapter queue: %v", err)
@@ -284,7 +305,6 @@ func (w *Worker) processChapters(ctx context.Context) {
 				}
 
 				wg.Wait()
-
 			} else {
 				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, maxConcurrent-1).Result()
 				if err != nil {
@@ -549,7 +569,6 @@ func (w *Worker) processRetryQueue(ctx context.Context) {
 				continue
 			}
 
-			var job Job
 			var rawJob map[string]interface{}
 			if err := json.Unmarshal([]byte(result[1]), &rawJob); err != nil {
 				log.Printf("Error unmarshalling retry job: %v", err)
@@ -558,34 +577,52 @@ func (w *Worker) processRetryQueue(ctx context.Context) {
 
 			// Determine job type based on presence of novel_id field
 			if _, ok := rawJob["novel_id"]; ok {
-				var chapterJob ChapterJob
-				if err := json.Unmarshal([]byte(result[1]), &chapterJob); err != nil {
-					log.Printf("Error unmarshalling chapter job: %v", err)
-					continue
+				if _, ok := rawJob["title"]; ok {
+					var chapterJob ChapterJob
+					if err := json.Unmarshal([]byte(result[1]), &chapterJob); err != nil {
+						log.Printf("Error unmarshalling chapter job: %v", err)
+						continue
+					}
+					if err := w.processChapter(result[1]); err != nil {
+						log.Printf("Error processing retry for chapter %s: %v", chapterJob.Title, err)
+						w.enqueueForRetry(chapterJob)
+					}
+				} else {
+					var updateJob UpdateJob
+					if err := json.Unmarshal([]byte(result[1]), &updateJob); err != nil {
+						log.Printf("Error unmarshalling update job: %v", err)
+						continue
+					}
+					if err := w.processUpdate(ctx, result[1]); err != nil {
+						log.Printf("Error processing retry for update %d: %v", updateJob.NovelID, err)
+						w.enqueueUpdateForRetry(updateJob)
+					}
 				}
-				job = &chapterJob
 			} else {
 				var novelJob NovelJob
 				if err := json.Unmarshal([]byte(result[1]), &novelJob); err != nil {
 					log.Printf("Error unmarshalling novel job: %v", err)
 					continue
 				}
-				job = &novelJob
-			}
-
-			if chapterJob, ok := job.(*ChapterJob); ok {
-				if err := w.processChapter(result[1]); err != nil {
-					log.Printf("Error processing retry for chapter %s: %v", chapterJob.Title, err)
-					w.enqueueForRetry(*chapterJob)
-				}
-			} else if novelJob, ok := job.(*NovelJob); ok {
 				if err := w.processNovel(ctx, result[1]); err != nil {
 					log.Printf("Error processing retry for novel %s: %v", novelJob.URL, err)
-					w.enqueueNovelForRetry(*novelJob)
+					w.enqueueNovelForRetry(novelJob)
 				}
 			}
 		}
 	}
+}
+
+func (w *Worker) enqueueUpdateForRetry(job UpdateJob) error {
+	job.IncrementRetries()
+	log.Printf("Retrying update for novel %d (attempt %d)", job.NovelID, job.GetRetries())
+
+	jobData, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("marshalling retry job: %w", err)
+	}
+
+	return w.enqueue(retryQueueKey, string(jobData))
 }
 
 func (w *Worker) enqueue(queueKey string, value string) error {
@@ -626,13 +663,31 @@ func (w *Worker) markChapterProcessed(ctx context.Context, novelID uint, chapter
 	return w.Redis.SAdd(ctx, finishedChaptersKey, key).Err()
 }
 
-func (w *Worker) ProcessUpdate(novelID uint) error {
+func (w *Worker) EnqueueUpdate(novelID uint) error {
+	job := UpdateJob{
+		NovelID: novelID,
+		Retries: 0,
+	}
+	jobData, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("marshalling update job: %w", err)
+	}
+
+	return w.enqueue(updateQueueKey, string(jobData))
+}
+
+func (w *Worker) processUpdate(ctx context.Context, jobData string) error {
+	var updateJob UpdateJob
+	if err := json.Unmarshal([]byte(jobData), &updateJob); err != nil {
+		return fmt.Errorf("unmarshalling update job: %w", err)
+	}
+
 	var novelURL string
 	var existingNovel models.Novel
-	result := w.DB.First(&existingNovel, novelID)
+	result := w.DB.First(&existingNovel, updateJob.NovelID)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
-			log.Printf("Novel with ID %d not found.", novelID)
+			log.Printf("Novel with ID %d not found.", updateJob.NovelID)
 			return fmt.Errorf("novel not found")
 		} else if result.Error != nil {
 			log.Printf("Error fetching novel: %v", result.Error)
@@ -647,12 +702,14 @@ func (w *Worker) ProcessUpdate(novelID uint) error {
 		return err
 	}
 
+	log.Printf("Crawled novel: %s", strconv.Itoa(int(existingNovel.ID)))
 	var existingChapters []models.Chapter
 	result = w.DB.Where("novel_id = ?", existingNovel.ID).Find(&existingChapters)
 	if result.Error != nil {
 		log.Printf("Error fetching existing chapters for novel ID %d: %v", existingNovel.ID, result.Error)
 		return result.Error
 	}
+	log.Printf("Fetched %d existing chapters", len(existingChapters))
 
 	existingChapterNumbers := make(map[int]bool)
 	for _, chapter := range existingChapters {
