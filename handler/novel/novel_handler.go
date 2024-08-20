@@ -32,6 +32,7 @@ type NovelResponse struct {
 	RawTitle    string    `json:"raw_title"`
 	Author      string    `json:"author"`
 	Description string    `json:"description"`
+	EpubURL     string    `json:"epub_url"`
 	Thumbnail   string    `json:"thumbnail"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -40,7 +41,7 @@ func (h *NovelHandler) GetNovel(c *gin.Context) {
 	id := c.Param("id")
 	var novelResponse NovelResponse
 	var novel models.Novel
-	if err := h.DB.Table("novels").Select("id, title, raw_title, author, description, thumbnail, updated_at").
+	if err := h.DB.Table("novels").Select("id, title, raw_title, author, description, thumbnail, updated_at, epub_url").
 		Where("id = ?", id).First(&novel).
 		Scan(&novelResponse).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {

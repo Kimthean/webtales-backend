@@ -11,6 +11,7 @@ type Novel struct {
 	Description *string   `json:"description"`
 	URL         *string   `json:"url"`
 	Chapters    []Chapter `json:"chapters"`
+	EpubURL     *string   `json:"epub_url"`
 }
 
 type Chapter struct {

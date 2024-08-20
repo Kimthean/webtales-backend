@@ -14,7 +14,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -33,22 +32,22 @@ func main() {
 	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{})
 
 	// Redis initialization (commented out for now)
-	redisURL := cfg.RedisURL
-	redisURL = strings.TrimPrefix(redisURL, "redis://")
-	parts := strings.Split(redisURL, "@")
-	if len(parts) != 2 {
-		log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
-	}
-	password := strings.TrimPrefix(parts[0], ":")
-	address := parts[1]
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     address,
-		Password: password,
-	})
-
+	// redisURL := cfg.RedisURL
+	// redisURL = strings.TrimPrefix(redisURL, "redis://")
+	// parts := strings.Split(redisURL, "@")
+	// if len(parts) != 2 {
+	// 	log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
+	// }
+	// password := strings.TrimPrefix(parts[0], ":")
+	// address := parts[1]
 	// rdb := redis.NewClient(&redis.Options{
-	// 	Addr: cfg.RedisURL,
+	// 	Addr:     address,
+	// 	Password: password,
 	// })
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr: cfg.RedisURL,
+	})
 
 	err = utils.InitS3()
 	if err != nil {
@@ -60,7 +59,7 @@ func main() {
 	w := worker.NewWorker(crawler, db, rdb)
 	go w.Start(context.Background())
 
-	gin.SetMode(gin.ReleaseMode)
+	// gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 	novelHandler := &novel.NovelHandler{DB: db}
 	authHandler := &auth.AuthHandler{DB: db}
@@ -72,6 +71,7 @@ func main() {
 		novelRoutes.GET("/:id/chapters", novelHandler.GetNovelChapters)
 		novelRoutes.GET("/all", novelHandler.GetNovels)
 		novelRoutes.GET("", novelHandler.GetPaginatedNovels)
+		novelRoutes.GET("/all", novelHandler.GetNovels)
 		novelRoutes.GET("/:id/chapter/:number", novelHandler.GetChapterByID)
 		novelRoutes.GET("/:id/paginate-chapters", novelHandler.GetNovelChaptersWithPage)
 		novelRoutes.GET("/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
@@ -86,6 +86,7 @@ func main() {
 		adminRoutes.POST("/migrate-thumbnail", novelHandler.MigrateNovelThumbnails)
 		adminRoutes.DELETE("/:id", novelHandler.DeleteNovelByID)
 		adminRoutes.GET("/users", authHandler.GetAllUsers)
+		adminRoutes.DELETE("/novel/:id", novelHandler.DeleteNovelByID)
 		adminRoutes.POST("/update/:id", func(c *gin.Context) {
 			id, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
@@ -109,6 +110,16 @@ func main() {
 				return
 			}
 			c.String(http.StatusOK, "Novel queued for crawling")
+		})
+		adminRoutes.POST("/convert-epub/:id", func(c *gin.Context) {
+			novelID := c.Param("id")
+
+			err := w.EnqueueNovelForConversion(novelID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"message": "Conversion process initiated"})
 		})
 
 	}

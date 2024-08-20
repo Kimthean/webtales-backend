@@ -8,11 +8,17 @@ import (
 	"go-novel/lib"
 	"go-novel/models"
 	"go-novel/utils"
+	"html"
+	"io"
 	"log"
+	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-shiori/go-epub"
 
 	"github.com/go-redis/redis/v8"
 	"golang.org/x/sync/semaphore"
@@ -20,12 +26,13 @@ import (
 )
 
 const (
-	novelQueueKey       = "novel_queue"
-	chapterQueueKey     = "chapter_queue"
-	retryQueueKey       = "retry_queue"
-	translationQueueKey = "translation_queue"
-	finishedChaptersKey = "finished_chapters"
-	updateQueueKey      = "update_queue"
+	novelQueueKey          = "novel_queue"
+	chapterQueueKey        = "chapter_queue"
+	retryQueueKey          = "retry_queue"
+	translationQueueKey    = "translation_queue"
+	finishedChaptersKey    = "finished_chapters"
+	updateQueueKey         = "update_queue"
+	epubConversionQueueKey = "epub_conversion_queue"
 
 	maxRetries    = 5
 	maxConcurrent = 20
@@ -113,6 +120,8 @@ func (w *Worker) Start(ctx context.Context) {
 	go w.processRetryQueue(ctx)
 	go w.processTranslationQueue(ctx)
 	go w.processQueue(ctx, updateQueueKey, w.processUpdate)
+	go w.processEPUBConversionQueue(ctx)
+
 }
 
 func (w *Worker) processQueue(ctx context.Context, queueKey string, processor func(context.Context, string) error) {
@@ -768,6 +777,127 @@ func (w *Worker) processUpdate(ctx context.Context, jobData string) error {
 			}
 		}
 	}
+
+	return nil
+}
+
+func (w *Worker) EnqueueNovelForConversion(novelID string) error {
+	// Marshal the novel ID into a job format suitable for your queue
+	jobData, err := json.Marshal(map[string]string{"novel_id": novelID})
+	if err != nil {
+		return fmt.Errorf("marshalling conversion job: %w", err)
+	}
+
+	// Push the job to the Redis queue
+	return w.Redis.RPush(context.Background(), epubConversionQueueKey, string(jobData)).Err()
+}
+
+func (w *Worker) processEPUBConversionQueue(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Stopping EPUB conversion queue processing")
+			return
+		default:
+			result, err := w.Redis.BLPop(ctx, 5*time.Second, epubConversionQueueKey).Result()
+			if err == redis.Nil {
+				continue
+			} else if err != nil {
+				log.Printf("Error popping from EPUB conversion queue: %v", err)
+				continue
+			}
+
+			var job map[string]string
+			if err := json.Unmarshal([]byte(result[1]), &job); err != nil {
+				log.Printf("Error unmarshalling conversion job: %v", err)
+				continue
+			}
+
+			novelID := job["novel_id"]
+			err = w.ConvertNovelToEPUB(ctx, novelID)
+			if err != nil {
+				log.Printf("Error converting novel %s to EPUB: %v", novelID, err)
+				// Optionally, handle retries or log the error
+			}
+		}
+	}
+}
+
+func (w *Worker) ConvertNovelToEPUB(ctx context.Context, novelID string) error {
+	var novel models.Novel
+	if err := w.DB.First(&novel, novelID).Error; err != nil {
+		return fmt.Errorf("failed to fetch novel: %v", err)
+	}
+
+	var chapters []models.Chapter
+	if err := w.DB.Where("novel_id = ?", novelID).Find(&chapters).Error; err != nil {
+		return fmt.Errorf("failed to fetch chapters: %v", err)
+	}
+
+	e, err := epub.NewEpub(*novel.Title)
+	if err != nil {
+		log.Printf("EPub Error")
+	}
+	e.SetAuthor(*novel.Author)
+	e.SetDescription(*novel.Description)
+
+	resp, err := http.Get(*novel.Thumbnail)
+	if err != nil {
+		return fmt.Errorf("failed to download thumbnail: %v", err)
+	}
+	defer resp.Body.Close()
+
+	thumbnailFile, err := os.CreateTemp("", "thumbnail-*.jpg")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file for thumbnail: %v", err)
+	}
+	defer os.Remove(thumbnailFile.Name())
+
+	_, err = io.Copy(thumbnailFile, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to save thumbnail: %v", err)
+	}
+
+	_, err = e.AddImage(thumbnailFile.Name(), "")
+	if err != nil {
+		return fmt.Errorf("failed to add cover image: %v", err)
+	}
+	e.SetCover(thumbnailFile.Name(), "")
+
+	for _, chapter := range chapters {
+		content := chapter.TranslatedContent
+		if content == nil {
+			content = chapter.Content
+		}
+		if content == nil {
+			log.Printf("Chapter %d has no content, skipping", chapter.ID)
+			continue
+		}
+
+		contentWithParagraphs := "<p>" + strings.ReplaceAll(html.EscapeString(string(*content)), "\n\n", "</p><p>") + "</p>"
+		contentWithTitle := "<h2>" + html.EscapeString(*chapter.TranslatedTitle) + "</h2>" + contentWithParagraphs
+		_, err := e.AddSection(contentWithTitle, *chapter.TranslatedTitle, "", "")
+		if err != nil {
+			return fmt.Errorf("failed to add chapter %d to EPUB: %v", chapter.ID, err)
+		}
+	}
+
+	filename := utils.Slugify(*novel.Title)
+
+	destFilePath := fmt.Sprintf("%s.epub", filename)
+	if err := e.Write(destFilePath); err != nil {
+		return fmt.Errorf("failed to write EPUB file: %v", err)
+	}
+
+	var s3Url string
+	s3Url, err = utils.UploadFileToS3(destFilePath, "epub", "epub")
+	if err != nil {
+		log.Println("Failed to upload EPUB to S3")
+	}
+
+	w.DB.Model(&models.Novel{}).Where("id = ?", novel.ID).Updates(map[string]interface{}{"epub_url": s3Url})
+
+	os.Remove(destFilePath)
 
 	return nil
 }
