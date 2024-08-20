@@ -72,7 +72,6 @@ func main() {
 		novelRoutes.GET("/:id/chapters", novelHandler.GetNovelChapters)
 		novelRoutes.GET("/all", novelHandler.GetNovels)
 		novelRoutes.GET("", novelHandler.GetPaginatedNovels)
-		novelRoutes.GET("/all", novelHandler.GetNovels)
 		novelRoutes.GET("/:id/chapter/:number", novelHandler.GetChapterByID)
 		novelRoutes.GET("/:id/paginate-chapters", novelHandler.GetNovelChaptersWithPage)
 		novelRoutes.GET("/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
