@@ -305,6 +305,36 @@ func (w *Worker) processChapters(ctx context.Context) {
 				}
 
 				wg.Wait()
+			} else if strings.Contains(chapterJob.URL, "69shuba.cx") {
+				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 1).Result()
+				if err != nil {
+					log.Printf("Error getting chapter jobs: %v", err)
+					time.Sleep(time.Second)
+					continue
+				}
+
+				var wg sync.WaitGroup
+				for _, job := range jobs {
+					wg.Add(1)
+					go func(jobData string) {
+						defer wg.Done()
+						if err := w.semaphore.Acquire(ctx, 1); err != nil {
+							log.Printf("Failed to acquire semaphore: %v", err)
+							return
+						}
+						defer w.semaphore.Release(1)
+
+						if err := w.processChapter(jobData); err != nil {
+							log.Printf("Error processing chapter: %v", err)
+						} else {
+							if err := w.Redis.LRem(ctx, chapterQueueKey, 1, jobData).Err(); err != nil {
+								log.Printf("Error removing job from chapter queue: %v", err)
+							}
+						}
+					}(job)
+				}
+
+				wg.Wait()
 			} else {
 				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, maxConcurrent-1).Result()
 				if err != nil {
@@ -721,7 +751,7 @@ func (w *Worker) processUpdate(ctx context.Context, jobData string) error {
 			newChapter := models.Chapter{
 				NovelID:           existingNovel.ID,
 				Number:            chapter.Number,
-				Title:             chapter.Title,
+				TranslatedTitle:   chapter.TranslatedTitle,
 				URL:               chapter.URL,
 				TranslationStatus: "pending",
 			}

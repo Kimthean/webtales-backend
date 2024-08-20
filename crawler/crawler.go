@@ -1,17 +1,22 @@
 package crawler
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"go-novel/models"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
 	"golang.org/x/exp/rand"
+	"golang.org/x/net/html/charset"
 )
 
 type Crawler struct {
@@ -67,6 +72,11 @@ func (c *Crawler) setLimitRules(collector *colly.Collector) {
 		DomainGlob:  "*lightnovelworld.co*",
 		RandomDelay: 4 * time.Second,
 	})
+	collector.Limit(&colly.LimitRule{
+		DomainGlob:  "*69shuba.cx*",
+		Parallelism: 2,
+		RandomDelay: 2 * time.Second,
+	})
 }
 
 func (c *Crawler) configureTransport(collector *colly.Collector) {
@@ -105,6 +115,8 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 		novel, err = c.crawlWuxiaspot(url)
 	case strings.Contains(url, "lightnovelworld.co"):
 		novel, err = c.crawlLightNovelWorld(url)
+	case strings.Contains(url, "69shuba.cx"):
+		novel, err = c.crawl69Shu(url)
 	default:
 		return nil, fmt.Errorf("unsupported URL: %s", url)
 	}
@@ -352,6 +364,70 @@ func (c *Crawler) crawlLightNovelWorld(url string) (*models.Novel, error) {
 	return novel, nil
 }
 
+func convertToUTF8(body []byte, contentType string) ([]byte, error) {
+	reader, err := charset.NewReader(bytes.NewReader(body), contentType)
+	if err != nil {
+		return nil, err
+	}
+	return ioutil.ReadAll(reader)
+}
+
+func (c *Crawler) crawl69Shu(url string) (*models.Novel, error) {
+	novel := &models.Novel{URL: &url}
+	collector := c.newCollector()
+
+	collector.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("Accept-Charset", "utf-8")
+	})
+	collector.OnResponse(func(r *colly.Response) {
+
+		utf8Body, err := convertToUTF8(r.Body, r.Headers.Get("Content-Type"))
+		if err != nil {
+			log.Printf("Error converting response body to UTF-8: %s", err)
+			return
+		}
+		r.Body = utf8Body
+	})
+
+	collector.OnHTML(".bookbox", func(e *colly.HTMLElement) {
+		title := e.ChildText("h1 a")
+		novel.Title = &title
+		log.Printf("Title: %s", title)
+
+		author := e.ChildText("p:contains('作者：') a")
+		novel.Author = &author
+		log.Printf("Author: %s", author)
+
+		coverImageURL := e.Request.AbsoluteURL(e.ChildAttr(".bookimg2 img", "src"))
+		novel.Thumbnail = &coverImageURL
+	})
+
+	collector.OnHTML(".jianjie-popup .content ", func(e *colly.HTMLElement) {
+		description := ""
+		e.ForEach("p", func(_ int, el *colly.HTMLElement) {
+			description += el.Text + "\n\n"
+		})
+		novel.Description = &description
+		log.Printf("Description: %s", description)
+	})
+
+	collector.OnHTML(".addbtn a.btn[href*='/book/']", func(e *colly.HTMLElement) {
+		chapterPageURL := e.Request.AbsoluteURL(e.Attr("href"))
+		chapters, err := c.extractChapters(chapterPageURL)
+		if err != nil {
+			log.Printf("Error extracting chapters: %s", err)
+		}
+		novel.Chapters = chapters
+	})
+
+	err := collector.Visit(url)
+	if err != nil {
+		return nil, fmt.Errorf("visiting novel page: %w", err)
+	}
+
+	return novel, nil
+}
+
 func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 	var chapters []models.Chapter
 	var err error
@@ -365,6 +441,8 @@ func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 		chapters, err = c.extractWuxiaboxChapters(url)
 	case strings.Contains(url, "lightnovelworld.co/"):
 		chapters, err = c.extractLightNovelWorldChapters(url)
+	case strings.Contains(url, "69shuba.cx"):
+		chapters, err = c.extract69shuChapter(url)
 	default:
 		return nil, fmt.Errorf("unsupported URL for chapter extraction: %s", url)
 	}
@@ -496,6 +574,82 @@ func (c *Crawler) extractLightNovelWorldChapters(url string) ([]models.Chapter, 
 	return chapters, nil
 }
 
+func (c *Crawler) extract69shuChapter(url string) ([]models.Chapter, error) {
+	var chapters []models.Chapter
+	reverseOrder := false
+
+	collector := c.newCollector()
+
+	collector.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("Accept-Charset", "utf-8")
+	})
+	collector.OnResponse(func(r *colly.Response) {
+
+		utf8Body, err := convertToUTF8(r.Body, r.Headers.Get("Content-Type"))
+		if err != nil {
+			log.Printf("Error converting response body to UTF-8: %s", err)
+			return
+		}
+		r.Body = utf8Body
+	})
+
+	// Check the first li element to determine the crawling order
+	collector.OnHTML("#catalog ul li:first-child", func(e *colly.HTMLElement) {
+		firstChapterNumber, err := strconv.Atoi(e.Attr("data-num"))
+		if err != nil {
+			log.Printf("Error parsing first chapter number: %s", err)
+			return
+		}
+
+		// If the first chapter number is not 1, set reverseOrder to true
+		if firstChapterNumber != 1 {
+			reverseOrder = true
+		}
+	})
+
+	collector.OnHTML("#catalog ul li a", func(e *colly.HTMLElement) {
+		chapterURL := e.Request.AbsoluteURL(e.Attr("href"))
+		chapterTitle := e.Text
+		chapterNumber, err := strconv.Atoi(e.Attr("data-num"))
+
+		if err != nil {
+			log.Printf("Error parsing chapter number: %s", err)
+			return
+		}
+
+		chapters = append(chapters, models.Chapter{
+			URL:    chapterURL,
+			Title:  chapterTitle,
+			Number: chapterNumber,
+		})
+	})
+
+	err := collector.Visit(url)
+	if err != nil {
+		return nil, fmt.Errorf("visiting chapter list: %w", err)
+	}
+
+	// Sort chapters based on the crawling order
+	if reverseOrder {
+		// Crawl from bottom to top
+		sort.Slice(chapters, func(i, j int) bool {
+			return chapters[i].Number > chapters[j].Number
+		})
+	} else {
+		// Crawl in normal order
+		sort.Slice(chapters, func(i, j int) bool {
+			return chapters[i].Number < chapters[j].Number
+		})
+	}
+
+	// Assign the correct chapter numbers based on the crawling order
+	for i := range chapters {
+		chapters[i].Number = i + 1
+	}
+
+	return chapters, nil
+}
+
 func (c *Crawler) CrawlChapter(chapterURL string, chapterTitle string, chapterNumber int) (*models.Chapter, error) {
 	chapter := &models.Chapter{
 		Number: chapterNumber,
@@ -532,6 +686,8 @@ func (c *Crawler) crawlChapterContent(pageURL string) (string, error) {
 		err = c.crawlWuxiaboxChapterContent(pageURL, &contentBuilder)
 	case strings.Contains(pageURL, "lightnovelworld.co"):
 		err = c.crawlLightNovelWorldChapterContent(pageURL, &contentBuilder)
+	case strings.Contains(pageURL, "69shuba.cx"):
+		err = c.crawl69shuChapterContent(pageURL, &contentBuilder)
 	default:
 		return "", fmt.Errorf("unsupported URL for chapter content: %s", pageURL)
 	}
@@ -674,6 +830,37 @@ func (c *Crawler) crawlLightNovelWorldChapterContent(pageURL string, contentBuil
 	collector.OnHTML(".chapter-content p", func(e *colly.HTMLElement) {
 		content := e.Text + "\n\n"
 		contentBuilder.WriteString(content)
+	})
+
+	err := collector.Visit(pageURL)
+	if err != nil {
+		return fmt.Errorf("visiting chapter page: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Crawler) crawl69shuChapterContent(pageURL string, contentBuilder *strings.Builder) error {
+	collector := c.newCollector()
+
+	collector.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("Accept-Charset", "utf-8")
+	})
+	collector.OnResponse(func(r *colly.Response) {
+
+		utf8Body, err := convertToUTF8(r.Body, r.Headers.Get("Content-Type"))
+		if err != nil {
+			log.Printf("Error converting response body to UTF-8: %s", err)
+			return
+		}
+		r.Body = utf8Body
+	})
+
+	collector.OnHTML(".mybox p", func(e *colly.HTMLElement) {
+		text := strings.TrimSpace(e.Text)
+		if text != "" {
+			contentBuilder.WriteString(text + "\n\n")
+		}
 	})
 
 	err := collector.Visit(pageURL)
