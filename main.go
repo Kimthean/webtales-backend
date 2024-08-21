@@ -76,6 +76,16 @@ func main() {
 		novelRoutes.GET("/:id/paginate-chapters", novelHandler.GetNovelChaptersWithPage)
 		novelRoutes.GET("/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
 		novelRoutes.GET("/search", novelHandler.SearchNovels)
+		novelRoutes.POST("/convert-epub/:id", func(c *gin.Context) {
+			novelID := c.Param("id")
+
+			err := w.EnqueueNovelForConversion(novelID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"message": "Conversion process initiated"})
+		})
 	}
 
 	adminRoutes := r.Group("/admin")
