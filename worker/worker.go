@@ -882,7 +882,9 @@ func (w *Worker) ConvertNovelToEPUB(ctx context.Context, novelID string) error {
 		}
 	}
 
-	filename := utils.Slugify(*novel.Title)
+	currentDate := time.Now().Format("2006-01-02")
+
+	filename := fmt.Sprintf("%s-%s", utils.Slugify(*novel.Title), currentDate)
 
 	destFilePath := fmt.Sprintf("%s.epub", filename)
 	if err := e.Write(destFilePath); err != nil {
