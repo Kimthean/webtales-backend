@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"go-novel/lib"
 	"go-novel/models"
 	"go-novel/utils"
@@ -337,7 +336,7 @@ func (h *NovelHandler) GetPaginatedNovels(c *gin.Context) {
 		Joins("LEFT JOIN (?) as cc ON cc.novel_id = novels.id", chapterCountSubquery).
 		Joins("LEFT JOIN (?) as tc ON tc.novel_id = novels.id", translatedChapterCountSubquery).
 		Where("novels.deleted_at IS NULL").
-		Order("novels.updated_at DESC")
+		Order("novels.created_at DESC")
 
 	if err := query.Count(&totalNovels).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error counting novels"})
@@ -370,7 +369,6 @@ func (h *NovelHandler) GetPaginatedNovels(c *gin.Context) {
 
 func (h *NovelHandler) ListMissingTranslations(c *gin.Context) {
 	var chapters []models.Chapter
-	// Assuming `db` is your database connection and `models.Chapter` is your model
 	result := h.DB.Where("translated_content IS NULL OR translation_status <> 'completed'").Find(&chapters)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching chapters"})
@@ -382,7 +380,8 @@ func (h *NovelHandler) ListMissingTranslations(c *gin.Context) {
 func (h *NovelHandler) ReTranslateChapters(c *gin.Context) {
 	var chapters []models.Chapter
 	// Fetch chapters missing translation
-	result := h.DB.Where("translated_content IS NULL OR translated_title IS NULL OR translation_status <> 'completed'").Find(&chapters)
+	result := h.DB.Where("translated_content IS NULL OR translation_status <> 'completed'").Find(&chapters)
+
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching chapters"})
 		return
@@ -413,14 +412,10 @@ func (h *NovelHandler) ReTranslateChapters(c *gin.Context) {
 }
 
 func (h *NovelHandler) TranslateChapter(chapter *models.Chapter) error {
-	if chapter.Content == nil {
-		log.Printf("Chapter ID %d has no content to translate", chapter.ID)
-		return fmt.Errorf("chapter content is nil")
-	}
 
-	translatedContent, err := lib.Translate(*chapter.Content)
+	content := *chapter.Content
+	translatedContent, err := lib.Translate(content)
 	if err != nil {
-		log.Printf("Error translating chapter ID %d: %v", chapter.ID, err)
 		return err
 	}
 
