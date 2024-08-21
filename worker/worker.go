@@ -830,7 +830,7 @@ func (w *Worker) ConvertNovelToEPUB(ctx context.Context, novelID string) error {
 	}
 
 	var chapters []models.Chapter
-	if err := w.DB.Where("novel_id = ?", novelID).Find(&chapters).Error; err != nil {
+	if err := w.DB.Where("novel_id = ?", novelID).Order("number ASC").Find(&chapters).Error; err != nil {
 		return fmt.Errorf("failed to fetch chapters: %v", err)
 	}
 

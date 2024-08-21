@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"go-novel/models"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"sort"
@@ -369,7 +369,7 @@ func convertToUTF8(body []byte, contentType string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ioutil.ReadAll(reader)
+	return io.ReadAll(reader)
 }
 
 func (c *Crawler) crawl69Shu(url string) (*models.Novel, error) {
@@ -401,12 +401,19 @@ func (c *Crawler) crawl69Shu(url string) (*models.Novel, error) {
 		coverImageURL := e.Request.AbsoluteURL(e.ChildAttr(".bookimg2 img", "src"))
 		novel.Thumbnail = &coverImageURL
 	})
-
-	collector.OnHTML(".jianjie-popup .content ", func(e *colly.HTMLElement) {
+	collector.OnHTML(".jianjie-popup .content", func(e *colly.HTMLElement) {
 		description := ""
+
 		e.ForEach("p", func(_ int, el *colly.HTMLElement) {
 			description += el.Text + "\n\n"
 		})
+
+		if description == "" {
+			e.ForEach("p", func(_ int, el *colly.HTMLElement) {
+				description = strings.ReplaceAll(el.Text, "<br>", "\n\n")
+			})
+		}
+
 		novel.Description = &description
 		log.Printf("Description: %s", description)
 	})
@@ -576,7 +583,6 @@ func (c *Crawler) extractLightNovelWorldChapters(url string) ([]models.Chapter, 
 
 func (c *Crawler) extract69shuChapter(url string) ([]models.Chapter, error) {
 	var chapters []models.Chapter
-	reverseOrder := false
 
 	collector := c.newCollector()
 
@@ -593,25 +599,16 @@ func (c *Crawler) extract69shuChapter(url string) ([]models.Chapter, error) {
 		r.Body = utf8Body
 	})
 
-	// Check the first li element to determine the crawling order
-	collector.OnHTML("#catalog ul li:first-child", func(e *colly.HTMLElement) {
-		firstChapterNumber, err := strconv.Atoi(e.Attr("data-num"))
-		if err != nil {
-			log.Printf("Error parsing first chapter number: %s", err)
+	collector.OnHTML("#catalog ul li a", func(a *colly.HTMLElement) {
+		chapterURL := a.Attr("href")
+		chapterTitle := a.Text
+		chapterNumberStr := a.DOM.Parent().AttrOr("data-num", "")
+		if chapterNumberStr == "" {
+			log.Printf("Skipping element without data-num attribute")
 			return
 		}
 
-		// If the first chapter number is not 1, set reverseOrder to true
-		if firstChapterNumber != 1 {
-			reverseOrder = true
-		}
-	})
-
-	collector.OnHTML("#catalog ul li a", func(e *colly.HTMLElement) {
-		chapterURL := e.Request.AbsoluteURL(e.Attr("href"))
-		chapterTitle := e.Text
-		chapterNumber, err := strconv.Atoi(e.Attr("data-num"))
-
+		chapterNumber, err := strconv.Atoi(chapterNumberStr)
 		if err != nil {
 			log.Printf("Error parsing chapter number: %s", err)
 			return
@@ -623,29 +620,15 @@ func (c *Crawler) extract69shuChapter(url string) ([]models.Chapter, error) {
 			Number: chapterNumber,
 		})
 	})
-
 	err := collector.Visit(url)
 	if err != nil {
 		return nil, fmt.Errorf("visiting chapter list: %w", err)
 	}
 
-	// Sort chapters based on the crawling order
-	if reverseOrder {
-		// Crawl from bottom to top
-		sort.Slice(chapters, func(i, j int) bool {
-			return chapters[i].Number > chapters[j].Number
-		})
-	} else {
-		// Crawl in normal order
-		sort.Slice(chapters, func(i, j int) bool {
-			return chapters[i].Number < chapters[j].Number
-		})
-	}
-
-	// Assign the correct chapter numbers based on the crawling order
-	for i := range chapters {
-		chapters[i].Number = i + 1
-	}
+	// Sort chapters in descending order by default
+	sort.Slice(chapters, func(i, j int) bool {
+		return chapters[i].Number > chapters[j].Number
+	})
 
 	return chapters, nil
 }
