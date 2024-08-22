@@ -36,6 +36,18 @@ type NovelResponse struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type NovelUpdateResponse struct {
+	ID                 uint      `json:"id"`
+	Title              string    `json:"title"`
+	RawTitle           string    `json:"raw_title"`
+	Description        string    `json:"description"`
+	Thumbnail          string    `json:"thumbnail"`
+	Author             string    `json:"author"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	LastChapterDate    time.Time `json:"last_chapter_date"`
+	TotalChaptersCount int       `json:"total_chapters_count"`
+}
+
 func (h *NovelHandler) GetNovel(c *gin.Context) {
 	id := c.Param("id")
 	var novelResponse NovelResponse
@@ -86,23 +98,45 @@ func (h *NovelHandler) GetNovels(c *gin.Context) {
 }
 
 func (h *NovelHandler) GetLatestNovels(c *gin.Context) {
-	var novels []models.Novel
-	if err := h.DB.Order("created_at DESC").Limit(6).Find(&novels).Error; err != nil {
+	var novelResponses []NovelUpdateResponse
+
+	chapterCountSubquery := h.DB.Table("chapters").
+		Select("COUNT(id) as total_chapters_count, novel_id").
+		Group("novel_id")
+
+	if err := h.DB.Table("novels").
+		Select("novels.id, novels.title, novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.epub_url, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
+		Joins("LEFT JOIN (?) as cc ON cc.novel_id = novels.id", chapterCountSubquery).
+		Where("novels.deleted_at IS NULL").
+		Order("novels.created_at DESC").
+		Limit(6).
+		Scan(&novelResponses).Error; err != nil {
 		log.Printf("Error fetching latest novels: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch latest novels"})
 		return
 	}
-	c.JSON(http.StatusOK, novels)
+	c.JSON(http.StatusOK, novelResponses)
 }
 
 func (h *NovelHandler) GetLatestUpdate(c *gin.Context) {
-	var novels []models.Novel
-	if err := h.DB.Order("updated_at DESC").Limit(6).Find(&novels).Error; err != nil {
+	var novelUpdates []NovelUpdateResponse
+
+	chapterCountSubquery := h.DB.Table("chapters").
+		Select("COUNT(id) as total_chapters_count, novel_id").
+		Group("novel_id")
+
+	if err := h.DB.Table("novels").
+		Select("novels.id, novels.title, novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.epub_url, chapters.updated_at as last_chapter_date, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
+		Joins("JOIN chapters ON chapters.novel_id = novels.id").
+		Joins("LEFT JOIN (?) as cc ON cc.novel_id = novels.id", chapterCountSubquery).
+		Order("chapters.updated_at DESC").
+		Limit(6).
+		Scan(&novelUpdates).Error; err != nil {
 		log.Printf("Error fetching latest updates: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch latest updates"})
 		return
 	}
-	c.JSON(http.StatusOK, novels)
+	c.JSON(http.StatusOK, novelUpdates)
 }
 
 func (h *NovelHandler) GetNovelChapters(c *gin.Context) {
