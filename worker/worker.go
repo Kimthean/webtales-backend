@@ -864,17 +864,22 @@ func (w *Worker) ConvertNovelToEPUB(ctx context.Context, novelID string) error {
 	}
 	e.SetCover(thumbnailFile.Name(), "")
 
+	watermarkText := "This EPUB is downloaded from WebtalesMTL. Please visit the https://webtalesmtl.xyz for more novels."
+
 	for _, chapter := range chapters {
-		content := chapter.TranslatedContent
-		if content == nil {
-			content = chapter.Content
+		var content string
+		if chapter.TranslatedContent != nil {
+			content = *chapter.TranslatedContent
+		} else {
+			content = *chapter.Content
 		}
-		if content == nil {
+		if content == "" {
 			log.Printf("Chapter %d has no content, skipping", chapter.ID)
 			continue
 		}
 
-		contentWithParagraphs := "<p>" + strings.ReplaceAll(html.EscapeString(string(*content)), "\n\n", "</p><p>") + "</p>"
+		contentWithWatermark := content + watermarkText
+		contentWithParagraphs := "<p>" + strings.ReplaceAll(html.EscapeString(contentWithWatermark), "\n\n", "</p><p>") + "</p>"
 		contentWithTitle := "<h2>" + html.EscapeString(*chapter.TranslatedTitle) + "</h2>" + contentWithParagraphs
 		_, err := e.AddSection(contentWithTitle, *chapter.TranslatedTitle, "", "")
 		if err != nil {
@@ -885,7 +890,6 @@ func (w *Worker) ConvertNovelToEPUB(ctx context.Context, novelID string) error {
 	currentDate := time.Now().Format("2006-01-02")
 
 	filename := fmt.Sprintf("%s-%s", utils.Slugify(*novel.Title), currentDate)
-
 	destFilePath := fmt.Sprintf("%s.epub", filename)
 	if err := e.Write(destFilePath); err != nil {
 		return fmt.Errorf("failed to write EPUB file: %v", err)
