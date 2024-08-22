@@ -9,7 +9,7 @@ import (
 
 func Translate(text string) (result *string, err error) {
 
-	const chunkSize = 700
+	const chunkSize = 900
 	var resultBuilder strings.Builder
 	runes := []rune(text)
 
