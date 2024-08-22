@@ -37,13 +37,7 @@ type NovelResponse struct {
 }
 
 type NovelUpdateResponse struct {
-	ID                 uint      `json:"id"`
-	Title              string    `json:"title"`
-	RawTitle           string    `json:"raw_title"`
-	Description        string    `json:"description"`
-	Thumbnail          string    `json:"thumbnail"`
-	Author             string    `json:"author"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	models.Novel
 	LastChapterDate    time.Time `json:"last_chapter_date"`
 	TotalChaptersCount int       `json:"total_chapters_count"`
 }
@@ -105,7 +99,7 @@ func (h *NovelHandler) GetLatestNovels(c *gin.Context) {
 		Group("novel_id")
 
 	if err := h.DB.Table("novels").
-		Select("novels.id, novels.title, novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.epub_url, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
+		Select("novels.id, novels.title, novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.created_at, novels.epub_url, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
 		Joins("LEFT JOIN (?) as cc ON cc.novel_id = novels.id", chapterCountSubquery).
 		Where("novels.deleted_at IS NULL").
 		Order("novels.created_at DESC").
@@ -126,7 +120,7 @@ func (h *NovelHandler) GetLatestUpdate(c *gin.Context) {
 		Group("novel_id")
 
 	if err := h.DB.Table("novels").
-		Select("novels.id, novels.title, novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.epub_url, chapters.updated_at as last_chapter_date, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
+		Select("novels.id, novels.title, novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.created_at,novels.epub_url, chapters.updated_at as last_chapter_date, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
 		Joins("JOIN chapters ON chapters.novel_id = novels.id").
 		Joins("LEFT JOIN (?) as cc ON cc.novel_id = novels.id", chapterCountSubquery).
 		Order("chapters.updated_at DESC").
