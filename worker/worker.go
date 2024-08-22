@@ -463,7 +463,6 @@ func (w *Worker) enqueueTranslation(chapterID uint, field, text string) error {
 
 func (w *Worker) processTranslationQueue(ctx context.Context) {
 	completedJobs := make(map[uint]bool)
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -871,43 +870,57 @@ func (w *Worker) ConvertNovelToEPUB(ctx context.Context, novelID string) error {
 		return fmt.Errorf("failed to fetch chapters: %v", err)
 	}
 
+	if novel.Title == nil {
+		return fmt.Errorf("novel title is nil")
+	}
 	e, err := epub.NewEpub(*novel.Title)
 	if err != nil {
 		log.Printf("EPub Error")
 	}
-	e.SetAuthor(*novel.Author)
-	e.SetDescription(*novel.Description)
-
-	resp, err := http.Get(*novel.Thumbnail)
-	if err != nil {
-		return fmt.Errorf("failed to download thumbnail: %v", err)
-	}
-	defer resp.Body.Close()
-
-	thumbnailFile, err := os.CreateTemp("", "thumbnail-*.jpg")
-	if err != nil {
-		return fmt.Errorf("failed to create temporary file for thumbnail: %v", err)
-	}
-	defer os.Remove(thumbnailFile.Name())
-
-	_, err = io.Copy(thumbnailFile, resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to save thumbnail: %v", err)
+	if novel.Author != nil {
+		e.SetAuthor(*novel.Author)
+	} else {
+		e.SetAuthor("Unknown")
 	}
 
-	_, err = e.AddImage(thumbnailFile.Name(), "")
-	if err != nil {
-		return fmt.Errorf("failed to add cover image: %v", err)
+	if novel.Description != nil {
+		e.SetDescription(*novel.Description)
+	} else {
+		e.SetDescription("No description available")
 	}
-	e.SetCover(thumbnailFile.Name(), "")
 
-	watermarkText := "This EPUB is downloaded from WebtalesMTL. Please visit the https://webtalesmtl.xyz for more novels."
+	if novel.Thumbnail != nil {
+		resp, err := http.Get(*novel.Thumbnail)
+		if err != nil {
+			return fmt.Errorf("failed to download thumbnail: %v", err)
+		}
+		defer resp.Body.Close()
+
+		thumbnailFile, err := os.CreateTemp("", "thumbnail-*.jpg")
+		if err != nil {
+			return fmt.Errorf("failed to create temporary file for thumbnail: %v", err)
+		}
+		defer os.Remove(thumbnailFile.Name())
+
+		_, err = io.Copy(thumbnailFile, resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to save thumbnail: %v", err)
+		}
+
+		_, err = e.AddImage(thumbnailFile.Name(), "")
+		if err != nil {
+			return fmt.Errorf("failed to add cover image: %v", err)
+		}
+		e.SetCover(thumbnailFile.Name(), "")
+	}
+
+	watermarkText := "This EPUB is downloaded from WebtalesMTL. Please visit https://webtalesmtl.xyz for more novels."
 
 	for _, chapter := range chapters {
 		var content string
 		if chapter.TranslatedContent != nil {
 			content = *chapter.TranslatedContent
-		} else {
+		} else if chapter.Content != nil {
 			content = *chapter.Content
 		}
 		if content == "" {
@@ -917,8 +930,16 @@ func (w *Worker) ConvertNovelToEPUB(ctx context.Context, novelID string) error {
 
 		contentWithWatermark := content + watermarkText
 		contentWithParagraphs := "<p>" + strings.ReplaceAll(html.EscapeString(contentWithWatermark), "\n\n", "</p><p>") + "</p>"
-		contentWithTitle := "<h2>" + html.EscapeString(*chapter.TranslatedTitle) + "</h2>" + contentWithParagraphs
-		_, err := e.AddSection(contentWithTitle, *chapter.TranslatedTitle, "", "")
+
+		var chapterTitle string
+		if chapter.TranslatedTitle != nil {
+			chapterTitle = html.EscapeString(*chapter.TranslatedTitle)
+		} else {
+			chapterTitle = "Chapter " + strconv.Itoa(chapter.Number)
+		}
+
+		contentWithTitle := "<h2>" + chapterTitle + "</h2>" + contentWithParagraphs
+		_, err := e.AddSection(contentWithTitle, chapterTitle, "", "")
 		if err != nil {
 			return fmt.Errorf("failed to add chapter %d to EPUB: %v", chapter.ID, err)
 		}
@@ -926,6 +947,9 @@ func (w *Worker) ConvertNovelToEPUB(ctx context.Context, novelID string) error {
 
 	currentDate := time.Now().Format("2006-01-02")
 
+	if novel.Title == nil {
+		return fmt.Errorf("novel title is nil")
+	}
 	filename := fmt.Sprintf("%s-%s", utils.Slugify(*novel.Title), currentDate)
 	destFilePath := fmt.Sprintf("%s.epub", filename)
 	if err := e.Write(destFilePath); err != nil {
