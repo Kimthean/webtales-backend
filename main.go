@@ -61,7 +61,8 @@ func main() {
 
 	// gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
-	novelHandler := &novel.NovelHandler{DB: db}
+
+	novelHandler := &novel.NovelHandler{DB: db, Worker: w}
 	authHandler := &auth.AuthHandler{DB: db}
 
 	// Novel routes
@@ -97,6 +98,7 @@ func main() {
 		adminRoutes.DELETE("/:id", novelHandler.DeleteNovelByID)
 		adminRoutes.GET("/users", authHandler.GetAllUsers)
 		adminRoutes.DELETE("/novel/:id", novelHandler.DeleteNovelByID)
+		adminRoutes.POST("/retranslate", novelHandler.RetranslateChapters)
 		adminRoutes.POST("/update/:id", func(c *gin.Context) {
 			id, err := strconv.Atoi(c.Param("id"))
 			if err != nil {

@@ -907,3 +907,26 @@ func (w *Worker) ConvertNovelToEPUB(ctx context.Context, novelID string) error {
 
 	return nil
 }
+
+
+func (w *Worker) RetranslateChapters(ctx context.Context) error {
+    var chapters []models.Chapter
+    if err := w.DB.Where("translation_status != ?", "completed").Find(&chapters).Error; err != nil {
+        return fmt.Errorf("failed to fetch chapters with incomplete translations: %v", err)
+    }
+
+    for _, chapter := range chapters {
+        if chapter.TranslatedTitle == nil || *chapter.TranslatedTitle == "" {
+            if err := w.enqueueTranslation(chapter.ID, "title", chapter.Title); err != nil {
+                log.Printf("Error enqueueing title translation for chapter %d: %v", chapter.ID, err)
+            }
+        }
+        if chapter.TranslatedContent == nil || *chapter.TranslatedContent == "" {
+            if err := w.enqueueTranslation(chapter.ID, "content", *chapter.Content); err != nil {
+                log.Printf("Error enqueueing content translation for chapter %d: %v", chapter.ID, err)
+            }
+        }
+    }
+
+    return nil
+}

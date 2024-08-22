@@ -4,6 +4,7 @@ import (
 	"go-novel/lib"
 	"go-novel/models"
 	"go-novel/utils"
+	"go-novel/worker"
 	"log"
 	"math"
 	"net/http"
@@ -15,7 +16,8 @@ import (
 )
 
 type NovelHandler struct {
-	DB *gorm.DB
+	DB     *gorm.DB
+	Worker *worker.Worker
 }
 
 type ChapterResponse struct {
@@ -496,4 +498,13 @@ func (h *NovelHandler) MigrateNovelThumbnails(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Migration completed"})
+}
+
+func (h *NovelHandler) RetranslateChapters(c *gin.Context) {
+	if err := h.Worker.RetranslateChapters(c.Request.Context()); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusOK)
 }
