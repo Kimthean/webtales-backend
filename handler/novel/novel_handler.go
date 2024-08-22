@@ -115,15 +115,19 @@ func (h *NovelHandler) GetLatestNovels(c *gin.Context) {
 func (h *NovelHandler) GetLatestUpdate(c *gin.Context) {
 	var novelUpdates []NovelUpdateResponse
 
+	latestChapterSubquery := h.DB.Table("chapters").
+		Select("novel_id, MAX(updated_at) as last_chapter_date").
+		Group("novel_id")
+
 	chapterCountSubquery := h.DB.Table("chapters").
 		Select("COUNT(id) as total_chapters_count, novel_id").
 		Group("novel_id")
 
 	if err := h.DB.Table("novels").
-		Select("novels.id, novels.title, novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.created_at,novels.epub_url, chapters.updated_at as last_chapter_date, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
-		Joins("JOIN chapters ON chapters.novel_id = novels.id").
+		Select("novels.id, novels.title, novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.created_at, novels.epub_url, lc.last_chapter_date, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
+		Joins("JOIN (?) as lc ON lc.novel_id = novels.id", latestChapterSubquery).
 		Joins("LEFT JOIN (?) as cc ON cc.novel_id = novels.id", chapterCountSubquery).
-		Order("chapters.updated_at DESC").
+		Order("lc.last_chapter_date DESC").
 		Limit(6).
 		Scan(&novelUpdates).Error; err != nil {
 		log.Printf("Error fetching latest updates: %v", err)
