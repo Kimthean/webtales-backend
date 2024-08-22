@@ -12,6 +12,8 @@ type Novel struct {
 	URL         *string   `json:"url"`
 	Chapters    []Chapter `json:"chapters"`
 	EpubURL     *string   `json:"epub_url"`
+	Tags        []*Tag    `gorm:"many2many:novel_tags;" json:"tags"`
+	Genres      []*Genre  `gorm:"many2many:novel_genres;" json:"genres"`
 }
 
 type Chapter struct {
@@ -25,4 +27,14 @@ type Chapter struct {
 	TranslatedContent *string `json:"translated_content"`
 	TranslationStatus string  `json:"translation_status"`
 	URL               string  `json:"url"`
+}
+
+type Tag struct {
+	gorm.Model
+	Name string `json:"name"`
+}
+
+type Genre struct {
+	gorm.Model
+	Name string `json:"name"`
 }

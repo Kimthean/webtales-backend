@@ -87,7 +87,21 @@ func (h *NovelHandler) GetNovels(c *gin.Context) {
 
 func (h *NovelHandler) GetLatestNovels(c *gin.Context) {
 	var novels []models.Novel
-	h.DB.Order("created_at DESC").Find(&novels)
+	if err := h.DB.Order("created_at DESC").Limit(6).Find(&novels).Error; err != nil {
+		log.Printf("Error fetching latest novels: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch latest novels"})
+		return
+	}
+	c.JSON(http.StatusOK, novels)
+}
+
+func (h *NovelHandler) GetLatestUpdate(c *gin.Context) {
+	var novels []models.Novel
+	if err := h.DB.Order("updated_at DESC").Limit(6).Find(&novels).Error; err != nil {
+		log.Printf("Error fetching latest updates: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch latest updates"})
+		return
+	}
 	c.JSON(http.StatusOK, novels)
 }
 

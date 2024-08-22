@@ -66,11 +66,13 @@ func main() {
 	authHandler := &auth.AuthHandler{DB: db}
 
 	// Novel routes
-	novelRoutes := r.Group("/novels")
+	novelRoutes := r.Group("/novel")
 	{
 		novelRoutes.GET("/:id", novelHandler.GetNovel)
 		novelRoutes.GET("/:id/chapters", novelHandler.GetNovelChapters)
 		novelRoutes.GET("/all", novelHandler.GetNovels)
+		novelRoutes.GET("/latest", novelHandler.GetLatestNovels)
+		novelRoutes.GET("/latest-update", novelHandler.GetLatestUpdate)
 		novelRoutes.GET("", novelHandler.GetPaginatedNovels)
 		novelRoutes.GET("/:id/chapter/:number", novelHandler.GetChapterByID)
 		novelRoutes.GET("/:id/paginate-chapters", novelHandler.GetNovelChaptersWithPage)
@@ -78,7 +80,6 @@ func main() {
 		novelRoutes.GET("/search", novelHandler.SearchNovels)
 		novelRoutes.POST("/convert-epub/:id", func(c *gin.Context) {
 			novelID := c.Param("id")
-
 			err := w.EnqueueNovelForConversion(novelID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
