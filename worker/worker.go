@@ -452,7 +452,7 @@ func (w *Worker) enqueueTranslation(chapterID uint, field, text string) error {
 		ChapterID: chapterID,
 		Field:     field,
 		Text:      text,
-		Retries:   0,
+		Retries:   3,
 	}
 	jobData, err := json.Marshal(job)
 	if err != nil {
@@ -462,6 +462,8 @@ func (w *Worker) enqueueTranslation(chapterID uint, field, text string) error {
 }
 
 func (w *Worker) processTranslationQueue(ctx context.Context) {
+	completedJobs := make(map[uint]bool)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -470,6 +472,10 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 		default:
 			result, err := w.Redis.BLPop(ctx, 1*time.Second, translationQueueKey).Result()
 			if err == redis.Nil {
+				if len(completedJobs) > 0 {
+					w.checkMissingTranslations(completedJobs)
+					completedJobs = make(map[uint]bool)
+				}
 				continue
 			} else if err != nil {
 				log.Printf("Error popping from translation queue: %v", err)
@@ -479,6 +485,12 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 			var job TranslationJob
 			if err := json.Unmarshal([]byte(result[1]), &job); err != nil {
 				log.Printf("Error unmarshalling translation job: %v", err)
+				continue
+			}
+
+			if job.Text == "" {
+				log.Printf("Skipping translation for chapter %d, field %s due to empty text", job.ChapterID, job.Field)
+				completedJobs[job.ChapterID] = true
 				continue
 			}
 
@@ -543,8 +555,33 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 					log.Printf("Error removing job from translation queue: %v", err)
 				}
 			}
+			completedJobs[job.ChapterID] = true
 		}
 	}
+}
+
+func (w *Worker) checkMissingTranslations(completedJobs map[uint]bool) {
+	var chapters []models.Chapter
+	if err := w.DB.Where("id IN ?", keysToSlice(completedJobs)).Find(&chapters).Error; err != nil {
+		log.Printf("Error fetching chapters: %v", err)
+		return
+	}
+
+	for _, chapter := range chapters {
+		if chapter.TranslatedTitle == nil || chapter.TranslatedContent == nil || chapter.TranslationStatus != "completed" {
+			log.Printf("Chapter %d has missing translations. Enqueueing for retranslation.", chapter.ID)
+			w.enqueueTranslation(chapter.ID, "title", chapter.Title)
+			w.enqueueTranslation(chapter.ID, "content", *chapter.Content)
+		}
+	}
+}
+
+func keysToSlice(m map[uint]bool) []uint {
+	keys := make([]uint, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func (w *Worker) enqueueForRetry(job ChapterJob) error {
@@ -908,25 +945,32 @@ func (w *Worker) ConvertNovelToEPUB(ctx context.Context, novelID string) error {
 	return nil
 }
 
-
 func (w *Worker) RetranslateChapters(ctx context.Context) error {
-    var chapters []models.Chapter
-    if err := w.DB.Where("translation_status != ?", "completed").Find(&chapters).Error; err != nil {
-        return fmt.Errorf("failed to fetch chapters with incomplete translations: %v", err)
-    }
+	var chapters []models.Chapter
+	if err := w.DB.Where("translated_content IS NULL OR translation_status <> 'completed'").Find(&chapters).Error; err != nil {
+		return fmt.Errorf("failed to fetch chapters with incomplete translations: %v", err)
+	}
 
-    for _, chapter := range chapters {
-        if chapter.TranslatedTitle == nil || *chapter.TranslatedTitle == "" {
-            if err := w.enqueueTranslation(chapter.ID, "title", chapter.Title); err != nil {
-                log.Printf("Error enqueueing title translation for chapter %d: %v", chapter.ID, err)
-            }
-        }
-        if chapter.TranslatedContent == nil || *chapter.TranslatedContent == "" {
-            if err := w.enqueueTranslation(chapter.ID, "content", *chapter.Content); err != nil {
-                log.Printf("Error enqueueing content translation for chapter %d: %v", chapter.ID, err)
-            }
-        }
-    }
+	log.Printf("Enqueueing %d chapters for retranslation...", len(chapters))
 
-    return nil
+	for _, chapter := range chapters {
+		log.Printf("Enqueueing chapter %s for retranslation", chapter.Title)
+	}
+
+	for _, chapter := range chapters {
+		if chapter.TranslatedTitle == nil || *chapter.TranslatedTitle == "" {
+			if err := w.enqueueTranslation(chapter.ID, "title", chapter.Title); err != nil {
+				log.Printf("Error enqueueing title translation for chapter %d: %v", chapter.ID, err)
+			}
+		}
+		if chapter.TranslatedContent == nil || *chapter.TranslatedContent == "" {
+			log.Printf("Enqueueing content translation for chapter %d", chapter.ID)
+			log.Printf("Content: %s", *chapter.Content)
+			if err := w.enqueueTranslation(chapter.ID, "content", *chapter.Content); err != nil {
+				log.Printf("Error enqueueing content translation for chapter %d: %v", chapter.ID, err)
+			}
+		}
+	}
+
+	return nil
 }
