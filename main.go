@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -32,23 +33,22 @@ func main() {
 	}
 	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{}, &models.Genre{}, &models.Tag{})
 
-	// Redis initialization (commented out for now)
-	// redisURL := cfg.RedisURL
-	// redisURL = strings.TrimPrefix(redisURL, "redis://")
-	// parts := strings.Split(redisURL, "@")
-	// if len(parts) != 2 {
-	// 	log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
-	// }
-	// password := strings.TrimPrefix(parts[0], ":")
-	// address := parts[1]
-	// rdb := redis.NewClient(&redis.Options{
-	// 	Addr:     address,
-	// 	Password: password,
-	// })
-
+	redisURL := cfg.RedisURL
+	redisURL = strings.TrimPrefix(redisURL, "redis://")
+	parts := strings.Split(redisURL, "@")
+	if len(parts) != 2 {
+		log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
+	}
+	password := strings.TrimPrefix(parts[0], ":")
+	address := parts[1]
 	rdb := redis.NewClient(&redis.Options{
-		Addr: cfg.RedisURL,
+		Addr:     address,
+		Password: password,
 	})
+
+	// rdb := redis.NewClient(&redis.Options{
+	// 	Addr: cfg.RedisURL,
+	// })
 
 	err = utils.InitS3()
 	if err != nil {
@@ -60,7 +60,7 @@ func main() {
 	w := worker.NewWorker(crawler, db, rdb)
 	go w.Start(context.Background())
 
-	// gin.SetMode(gin.ReleaseMode)
+	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
 	novelHandler := &novel.NovelHandler{DB: db, Worker: w}
