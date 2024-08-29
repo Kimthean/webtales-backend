@@ -241,13 +241,29 @@ func (c *Crawler) crawlWuxiabox(url string) (*models.Novel, error) {
 	})
 
 	collector.OnHTML("#info", func(e *colly.HTMLElement) {
-		var descriptionBuilder strings.Builder
+		var paragraphs []string
 
-		e.ForEach(".summary .content p", func(_ int, el *colly.HTMLElement) {
-			descriptionBuilder.WriteString(el.Text + "\n\n")
-		})
+		paragraphElements := e.DOM.Find(".summary .content p")
+		if paragraphElements.Length() > 1 {
+			paragraphElements.Each(func(_ int, s *goquery.Selection) {
+				trimmedText := strings.TrimSpace(s.Text())
+				if trimmedText != "" {
+					paragraphs = append(paragraphs, trimmedText)
+				}
+			})
+		} else {
+			content := e.ChildText(".summary .content p")
+			content = strings.ReplaceAll(content, "<br>", "\n")
+			content = strings.ReplaceAll(content, "<br/>", "\n")
+			for _, paragraph := range strings.Split(content, "\n") {
+				trimmedParagraph := strings.TrimSpace(paragraph)
+				if trimmedParagraph != "" {
+					paragraphs = append(paragraphs, trimmedParagraph)
+				}
+			}
+		}
 
-		detailedSummary := descriptionBuilder.String()
+		detailedSummary := strings.Join(paragraphs, "\n\n")
 		novel.Description = &detailedSummary
 	})
 
@@ -288,13 +304,29 @@ func (c *Crawler) crawlWuxiaspot(url string) (*models.Novel, error) {
 	})
 
 	collector.OnHTML("#info", func(e *colly.HTMLElement) {
-		var descriptionBuilder strings.Builder
+		var paragraphs []string
 
-		e.ForEach(".summary .content p", func(_ int, el *colly.HTMLElement) {
-			descriptionBuilder.WriteString(el.Text + "\n\n")
-		})
+		paragraphElements := e.DOM.Find(".summary .content p")
+		if paragraphElements.Length() > 1 {
+			paragraphElements.Each(func(_ int, s *goquery.Selection) {
+				trimmedText := strings.TrimSpace(s.Text())
+				if trimmedText != "" {
+					paragraphs = append(paragraphs, trimmedText)
+				}
+			})
+		} else {
+			content := e.ChildText(".summary .content p")
+			content = strings.ReplaceAll(content, "<br>", "\n\n")
+			content = strings.ReplaceAll(content, "<br/>", "\n\n")
+			for _, paragraph := range strings.Split(content, "\n\n") {
+				trimmedParagraph := strings.TrimSpace(paragraph)
+				if trimmedParagraph != "" {
+					paragraphs = append(paragraphs, trimmedParagraph)
+				}
+			}
+		}
 
-		detailedSummary := descriptionBuilder.String()
+		detailedSummary := strings.Join(paragraphs, "\n\n\n")
 		novel.Description = &detailedSummary
 	})
 
@@ -342,7 +374,7 @@ func (c *Crawler) crawlLightNovelWorld(url string) (*models.Novel, error) {
 	collector.OnHTML(".summary .content", func(e *colly.HTMLElement) {
 		description := ""
 		e.ForEach("p", func(_ int, el *colly.HTMLElement) {
-			description += el.Text + "\n\n"
+			description += el.Text + "\n\n\n"
 		})
 		novel.Description = &description
 	})
@@ -405,12 +437,12 @@ func (c *Crawler) crawl69Shu(url string) (*models.Novel, error) {
 		description := ""
 
 		e.ForEach("p", func(_ int, el *colly.HTMLElement) {
-			description += el.Text + "\n\n"
+			description += el.Text + "\n\n\n"
 		})
 
 		if description == "" {
 			e.ForEach("p", func(_ int, el *colly.HTMLElement) {
-				description = strings.ReplaceAll(el.Text, "<br>", "\n\n")
+				description = strings.ReplaceAll(el.Text, "<br>", "\n\n\n")
 			})
 		}
 
@@ -625,7 +657,6 @@ func (c *Crawler) extract69shuChapter(url string) ([]models.Chapter, error) {
 		return nil, fmt.Errorf("visiting chapter list: %w", err)
 	}
 
-	// Sort chapters in descending order by default
 	sort.Slice(chapters, func(i, j int) bool {
 		return chapters[i].Number > chapters[j].Number
 	})
@@ -771,7 +802,6 @@ func (c *Crawler) crawlWuxiaboxChapterContent(pageURL string, contentBuilder *st
 	})
 
 	collector.OnHTML(".chapter-content", func(e *colly.HTMLElement) {
-		// Function to process text content
 		processContent := func(text string) {
 			text = strings.TrimSpace(text)
 			if text != "" {
@@ -779,19 +809,16 @@ func (c *Crawler) crawlWuxiaboxChapterContent(pageURL string, contentBuilder *st
 			}
 		}
 
-		// Process <p> tags
 		e.ForEach("p", func(_ int, el *colly.HTMLElement) {
 			processContent(el.Text)
 		})
 
-		// Process direct text nodes
 		e.DOM.Contents().Each(func(_ int, s *goquery.Selection) {
 			if goquery.NodeName(s) == "#text" {
 				processContent(s.Text())
 			}
 		})
 
-		// Remove any unwanted elements
 		content := contentBuilder.String()
 		content = strings.ReplaceAll(content, "&ZeroWidthSpace;", "")
 

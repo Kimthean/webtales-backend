@@ -6,6 +6,7 @@ import (
 	"go-novel/crawler"
 	"go-novel/db"
 	auth "go-novel/handler/auth"
+	genre "go-novel/handler/genre"
 	novel "go-novel/handler/novel"
 	"go-novel/middleware"
 	"go-novel/models"
@@ -30,9 +31,8 @@ func main() {
 	if err != nil {
 		panic("failed to connect database")
 	}
-	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{})
+	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{}, &models.Genre{}, &models.Tag{})
 
-	// Redis initialization (commented out for now)
 	redisURL := cfg.RedisURL
 	redisURL = strings.TrimPrefix(redisURL, "redis://")
 	parts := strings.Split(redisURL, "@")
@@ -64,6 +64,7 @@ func main() {
 	r := gin.Default()
 
 	novelHandler := &novel.NovelHandler{DB: db, Worker: w}
+	genreHandler := &genre.GenreHandler{DB: db}
 	authHandler := &auth.AuthHandler{DB: db}
 
 	// Novel routes
@@ -90,6 +91,15 @@ func main() {
 		})
 	}
 
+	// Genre routes
+	genreRoutes := r.Group("/genre")
+	{
+		genreRoutes.GET("", genreHandler.GetGenres)
+		genreRoutes.GET("/:novelID", genreHandler.GetNovelGenres)
+		genreRoutes.POST("", genreHandler.CreateGenre)
+		genreRoutes.POST("/:novelID/genre/:genreID", genreHandler.AddGenreToNovel)
+	}
+
 	adminRoutes := r.Group("/admin")
 	adminRoutes.Use(middleware.AuthMiddleware(), middleware.AdminMiddleware())
 	{
@@ -100,6 +110,8 @@ func main() {
 		adminRoutes.GET("/users", authHandler.GetAllUsers)
 		adminRoutes.DELETE("/novel/:id", novelHandler.DeleteNovelByID)
 		adminRoutes.POST("/retranslate", novelHandler.RetranslateChapters)
+		adminRoutes.DELETE("/genre/:id", genreHandler.DeleteGenre)
+
 		adminRoutes.POST("/update/:id", func(c *gin.Context) {
 			id, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
@@ -116,7 +128,6 @@ func main() {
 		})
 		adminRoutes.POST("/crawl", func(c *gin.Context) {
 			url := c.Query("url")
-			log.Printf("Crawling %s", url)
 			err := w.EnqueueNovel(url)
 			if err != nil {
 				c.String(http.StatusInternalServerError, "Failed to enqueue novel")

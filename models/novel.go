@@ -36,5 +36,7 @@ type Tag struct {
 
 type Genre struct {
 	gorm.Model
-	Name string `json:"name"`
+	NameChinese string `json:"name_chinese"`
+	NamePinyin  string `json:"name_pinyin"`
+	NameEnglish string `json:"name_english"`
 }

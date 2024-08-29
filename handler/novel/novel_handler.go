@@ -427,7 +427,6 @@ func (h *NovelHandler) ListMissingTranslations(c *gin.Context) {
 
 func (h *NovelHandler) ReTranslateChapters(c *gin.Context) {
 	var chapters []models.Chapter
-	// Fetch chapters missing translation
 	result := h.DB.Where("translated_content IS NULL OR translation_status <> 'completed'").Find(&chapters)
 
 	if result.Error != nil {
@@ -508,3 +507,4 @@ func (h *NovelHandler) RetranslateChapters(c *gin.Context) {
 
 	c.Status(http.StatusOK)
 }
+

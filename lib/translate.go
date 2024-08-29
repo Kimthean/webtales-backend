@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/bregydoc/gtranslate"
@@ -9,7 +10,7 @@ import (
 
 func Translate(text string) (result *string, err error) {
 
-	const chunkSize = 900
+	const chunkSize = 1500
 	var resultBuilder strings.Builder
 	runes := []rune(text)
 
@@ -33,6 +34,7 @@ func Translate(text string) (result *string, err error) {
 
 		resultBuilder.WriteString(translated)
 	}
+	log.Printf("Translated %d characters", len(runes))
 
 	translatedResult := resultBuilder.String()
 	return &translatedResult, nil
