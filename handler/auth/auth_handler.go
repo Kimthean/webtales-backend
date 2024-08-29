@@ -73,7 +73,18 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"token": token})
+	c.JSON(http.StatusOK, gin.H{
+		"token": token,
+		"user": gin.H{
+			"id":           user.ID,
+			"username":     user.Username,
+			"profileImage": user.ProfileImage,
+			"email":        user.Email,
+			"role":         user.Role,
+			"createdAt":    user.CreatedAt,
+			"updatedAt":    user.UpdatedAt,
+		},
+	})
 }
 
 func (h *AuthHandler) GetAllUsers(c *gin.Context) {
