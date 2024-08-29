@@ -8,6 +8,7 @@ import (
 	auth "go-novel/handler/auth"
 	genre "go-novel/handler/genre"
 	novel "go-novel/handler/novel"
+	"go-novel/handler/user"
 	"go-novel/middleware"
 	"go-novel/models"
 	"go-novel/utils"
@@ -135,16 +136,6 @@ func main() {
 			}
 			c.String(http.StatusOK, "Novel queued for crawling")
 		})
-		adminRoutes.POST("/convert-epub/:id", func(c *gin.Context) {
-			novelID := c.Param("id")
-
-			err := w.EnqueueNovelForConversion(novelID)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"message": "Conversion process initiated"})
-		})
 
 	}
 
@@ -153,6 +144,17 @@ func main() {
 	{
 		authRoutes.POST("/signup", authHandler.SignUp)
 		authRoutes.POST("/login", authHandler.Login)
+		authRoutes.POST("/google/callback", authHandler.GoogleCallback)
+	}
+
+	userHandler := &user.UserHandler{DB: db}
+
+	userRoutes := r.Group("/user")
+	userRoutes.Use(middleware.AuthMiddleware())
+	{
+		userRoutes.GET("/me", userHandler.GetCurrentUser)
+		userRoutes.PUT("/profile", userHandler.UpdateProfile)
+		userRoutes.POST("/profile-picture", userHandler.UploadProfilePicture)
 	}
 
 	// Health check
