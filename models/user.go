@@ -13,6 +13,7 @@ type User struct {
 	PasswordHash string     `json:"-"`
 	Email        string     `json:"email" gorm:"uniqueIndex"`
 	Role         string     `gorm:"default:user"`
+	Provider     string     `gorm:"default:credential"`
 	Bookmarks    []Novel    `gorm:"many2many:user_novels;" json:"bookmarks,omitempty"`
 	Progress     []Progress `json:"progress,omitempty"`
 }

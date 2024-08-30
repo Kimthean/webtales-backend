@@ -154,7 +154,10 @@ func main() {
 	{
 		userRoutes.GET("/me", userHandler.GetCurrentUser)
 		userRoutes.PUT("/profile", userHandler.UpdateProfile)
+		userRoutes.PUT("/change-password", userHandler.ChangePassword)
 		userRoutes.POST("/profile-picture", userHandler.UploadProfilePicture)
+		userRoutes.POST("/bookmark/:novelID", userHandler.AddNovelToBookmark)
+		userRoutes.GET("/bookmarks", userHandler.GetUserBookmarks)
 	}
 
 	// Health check

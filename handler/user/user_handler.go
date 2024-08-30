@@ -8,8 +8,11 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -81,7 +84,6 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Profile updated successfully"})
 }
 
-// UploadProfilePicture handles the upload of a new profile picture
 func (h *UserHandler) UploadProfilePicture(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -141,4 +143,128 @@ func isValidImageFile(file *multipart.FileHeader) bool {
 	}
 
 	return validExtensions[ext]
+}
+
+func (h *UserHandler) ChangePassword(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	var changePasswordReq struct {
+		CurrentPassword string `json:"current_password" binding:"required"`
+		NewPassword     string `json:"new_password" binding:"required,min=8"`
+	}
+
+	if err := c.ShouldBindJSON(&changePasswordReq); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var user models.User
+	if err := h.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	if user.Provider == "google" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot change password for Google Auth users"})
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(changePasswordReq.CurrentPassword)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Current password is incorrect"})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(changePasswordReq.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash new password"})
+		return
+	}
+
+	user.PasswordHash = string(hashedPassword)
+	if err := h.DB.Save(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
+}
+
+func (h *UserHandler) AddNovelToBookmark(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	novelID, err := strconv.ParseUint(c.Param("novelID"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid novel ID"})
+		return
+	}
+
+	var user models.User
+	if err := h.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	var novel models.Novel
+	if err := h.DB.First(&novel, uint(novelID)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Novel not found"})
+		return
+	}
+
+	count := h.DB.Model(&user).Where("id = ?", novelID).Association("Bookmarks").Count()
+	if count > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "Novel already bookmarked"})
+		return
+	}
+
+	if err := h.DB.Model(&user).Association("Bookmarks").Append(&novel); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add novel to bookmarks"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Novel added to bookmarks successfully"})
+}
+
+func (h *UserHandler) GetUserBookmarks(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	var user models.User
+	if err := h.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	var bookmarks []struct {
+		ID          uint      `json:"id"`
+		Title       string    `json:"title"`
+		Author      string    `json:"author"`
+		Description string    `json:"description"`
+		Thumbnail   string    `json:"thumbnail"`
+		UpdatedAt   time.Time `json:"updated_at"`
+	}
+
+	err := h.DB.Table("user_novels").
+		Select("novels.id, novels.title, novels.author, novels.description, novels.thumbnail, novels.updated_at").
+		Joins("JOIN novels ON novels.id = user_novels.novel_id").
+		Where("user_novels.user_id = ?", user.ID).
+		Scan(&bookmarks).Error
+
+	if err != nil {
+		log.Printf("Error fetching bookmarks: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch bookmarks"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"bookmarks": bookmarks})
 }
