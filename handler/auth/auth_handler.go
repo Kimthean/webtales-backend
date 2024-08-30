@@ -8,20 +8,12 @@ import (
 	"go-novel/utils"
 
 	"github.com/gin-gonic/gin"
-	"github.com/markbates/goth"
-	"github.com/markbates/goth/providers/google"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 type AuthHandler struct {
 	DB *gorm.DB
-}
-
-func InitializeGothProviders(clientID, clientSecret, callbackURL string) {
-	goth.UseProviders(
-		google.New(clientID, clientSecret, callbackURL),
-	)
 }
 
 func (h *AuthHandler) GoogleCallback(c *gin.Context) {
@@ -47,6 +39,7 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 				Username:     req.Name,
 				ProfileImage: req.Picture,
 				Role:         "user",
+				Provider:     "google",
 			}
 			if err := h.DB.Create(&dbUser).Error; err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
@@ -77,6 +70,7 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 			"profileImage": dbUser.ProfileImage,
 			"email":        dbUser.Email,
 			"role":         dbUser.Role,
+			"provider":     dbUser.Provider,
 			"createdAt":    dbUser.CreatedAt,
 			"updatedAt":    dbUser.UpdatedAt,
 		},
