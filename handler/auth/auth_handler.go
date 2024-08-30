@@ -63,7 +63,7 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 		}
 	}
 
-	token, err := utils.GenerateJWT(dbUser.Username, dbUser.Role)
+	token, err := utils.GenerateJWT(dbUser.Username, dbUser.Role, dbUser.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate token"})
 		return
@@ -134,7 +134,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := utils.GenerateJWT(user.Username, user.Role)
+	token, err := utils.GenerateJWT(user.Username, user.Role, user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate token"})
 		return
