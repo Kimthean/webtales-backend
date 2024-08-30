@@ -4,6 +4,7 @@ import (
 	"go-novel/models"
 	"go-novel/types"
 	"go-novel/utils"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -16,16 +17,22 @@ type UserHandler struct {
 	DB *gorm.DB
 }
 
-// GetCurrentUser retrieves the current user's profile
 func (h *UserHandler) GetCurrentUser(c *gin.Context) {
 	userID, exists := c.Get("userID")
+	log.Println(userID)
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
 		return
 	}
 
+	userIDUint, ok := userID.(uint)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID type"})
+		return
+	}
+
 	var user models.User
-	if err := h.DB.First(&user, userID).Error; err != nil {
+	if err := h.DB.First(&user, userIDUint).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
@@ -43,7 +50,6 @@ func (h *UserHandler) GetCurrentUser(c *gin.Context) {
 	})
 }
 
-// UpdateProfile updates the user's profile information
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -63,11 +69,9 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	// Update user fields
 	if updateReq.Username != "" {
 		user.Username = updateReq.Username
 	}
-	// Add more fields as needed
 
 	if err := h.DB.Save(&user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
@@ -91,27 +95,23 @@ func (h *UserHandler) UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
-	// Check file type and size
 	if !isValidImageFile(file) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type or size"})
 		return
 	}
 
-	// Save file temporarily
 	tempFilePath := filepath.Join("tmp", file.Filename)
 	if err := c.SaveUploadedFile(file, tempFilePath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
 		return
 	}
 
-	// Upload to S3
 	s3URL, err := utils.UploadFileToS3(tempFilePath, "profile-pictures", filepath.Ext(file.Filename))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upload to S3"})
 		return
 	}
 
-	// Update user's profile picture URL in the database
 	var user models.User
 	if err := h.DB.First(&user, userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
@@ -127,14 +127,11 @@ func (h *UserHandler) UploadProfilePicture(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Profile picture updated successfully", "url": s3URL})
 }
 
-// Helper function to validate image file
 func isValidImageFile(file *multipart.FileHeader) bool {
-	// Check file size (e.g., max 5MB)
 	if file.Size > 5*1024*1024 {
 		return false
 	}
 
-	// Check file type
 	ext := filepath.Ext(file.Filename)
 	validExtensions := map[string]bool{
 		".jpg":  true,
