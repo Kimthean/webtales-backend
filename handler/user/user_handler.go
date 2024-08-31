@@ -268,3 +268,132 @@ func (h *UserHandler) GetUserBookmarks(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"bookmarks": bookmarks})
 }
+
+func (h *UserHandler) GetBookmark(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	novelID, err := strconv.ParseUint(c.Param("novelID"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid novel ID"})
+		return
+	}
+
+	var count int64
+	err = h.DB.Table("user_novels").
+		Where("user_id = ? AND novel_id = ?", userID, novelID).
+		Count(&count).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check bookmark status"})
+		return
+	}
+
+	isBookmarked := count > 0
+	c.JSON(http.StatusOK, gin.H{"bookmarked": isBookmarked})
+}
+
+func (h *UserHandler) RemoveNovelFromBookmark(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	novelID, err := strconv.ParseUint(c.Param("novelID"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid novel ID"})
+		return
+	}
+
+	if err := h.DB.Table("user_novels").
+		Where("user_id = ? AND novel_id = ?", userID, novelID).
+		Delete(nil).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove novel from bookmarks"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Novel removed from bookmarks successfully"})
+}
+
+func (h *UserHandler) UpdateReadingProgress(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	novelID, err := strconv.ParseUint(c.Param("novelID"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid novel ID"})
+		return
+	}
+
+	chapterID, err := strconv.ParseUint(c.Param("chapterID"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid chapter ID"})
+		return
+	}
+
+	var progress models.Progress
+	if err := h.DB.Where("user_id = ? AND novel_id = ?", userID, novelID).First(&progress).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			progress = models.Progress{
+				UserID:     uint(userID.(uint)),
+				NovelID:    uint(novelID),
+				ChapterID:  uint(chapterID),
+				LastReadAt: time.Now(),
+			}
+			if err := h.DB.Create(&progress).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create reading progress"})
+				return
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check reading progress"})
+			return
+		}
+	} else {
+
+		progress.ChapterID = uint(chapterID)
+		progress.LastReadAt = time.Now()
+		if err := h.DB.Save(&progress).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update reading progress"})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Reading progress updated successfully"})
+}
+
+func (h *UserHandler) GetReadingProgress(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	novelID, err := strconv.ParseUint(c.Param("novelID"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid novel ID"})
+		return
+	}
+
+	var progress models.Progress
+	if err := h.DB.Where("user_id = ? AND novel_id = ?", userID, novelID).First(&progress).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusOK, gin.H{"progress": nil})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve reading progress"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"novel_id":     progress.NovelID,
+		"chapter_id":   progress.ChapterID,
+		"last_read_at": progress.LastReadAt,
+	})
+}

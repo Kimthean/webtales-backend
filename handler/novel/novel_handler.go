@@ -50,17 +50,21 @@ func (h *NovelHandler) GetNovel(c *gin.Context) {
 	var novel models.Novel
 	if err := h.DB.Preload("Tags").Preload("Genres").First(&novel, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
+			log.Println("Novel not found")
 			c.JSON(http.StatusNotFound, gin.H{"error": "Novel not found"})
 			return
 		}
+		log.Printf("Error fetching novel: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	// Convert []*Tag to []Tag
 	tags := make([]models.Tag, len(novel.Tags))
 	for i, tag := range novel.Tags {
 		tags[i] = *tag
 	}
+
 	// Create a custom response struct to include all the fields we want
 	response := struct {
 		ID          uint         `json:"id"`
@@ -92,7 +96,6 @@ func (h *NovelHandler) GetNovel(c *gin.Context) {
 		Tags:        tags,
 	}
 
-	// Manually map genres to include only the fields we want
 	for _, genre := range novel.Genres {
 		response.Genres = append(response.Genres, struct {
 			ID          uint   `json:"id"`
