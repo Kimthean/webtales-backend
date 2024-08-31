@@ -17,8 +17,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+
 	"github.com/go-redis/redis/v8"
 )
 
@@ -63,6 +66,19 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
+
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"https://webtalesmtl.xyz", "http://localhost:4321"}, // Allowed origins
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},                     // Allowed methods
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},          // Allowed headers
+		ExposeHeaders:    []string{"Content-Length"},                                   // Headers that can be exposed to the browser
+		AllowCredentials: true,                                                         // Allow credentials (cookies, authorization headers, etc.)
+		AllowOriginFunc: func(origin string) bool {
+			// Custom logic to allow specific origins
+			return origin == "https://specific-allowed-origin.com"
+		},
+		MaxAge: 12 * time.Hour,
+	}))
 
 	novelHandler := &novel.NovelHandler{DB: db, Worker: w}
 	genreHandler := &genre.GenreHandler{DB: db}
