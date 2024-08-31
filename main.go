@@ -35,7 +35,7 @@ func main() {
 	if err != nil {
 		panic("failed to connect database")
 	}
-	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{}, &models.Genre{}, &models.Tag{})
+	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{}, &models.Genre{}, &models.Tag{}, &models.Progress{})
 
 	redisURL := cfg.RedisURL
 	redisURL = strings.TrimPrefix(redisURL, "redis://")
@@ -174,6 +174,11 @@ func main() {
 		userRoutes.POST("/profile-picture", userHandler.UploadProfilePicture)
 		userRoutes.POST("/bookmark/:novelID", userHandler.AddNovelToBookmark)
 		userRoutes.GET("/bookmarks", userHandler.GetUserBookmarks)
+		userRoutes.GET("/bookmark/:novelID", userHandler.GetBookmark)
+		userRoutes.DELETE("/bookmark/:novelID", userHandler.RemoveNovelFromBookmark)
+		userRoutes.GET("/progress/:novelID", userHandler.GetReadingProgress)
+		userRoutes.PUT("/progress/:novelID/:chapterID", userHandler.UpdateReadingProgress)
+
 	}
 
 	// Health check
