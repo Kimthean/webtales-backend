@@ -46,11 +46,9 @@ type NovelUpdateResponse struct {
 
 func (h *NovelHandler) GetNovel(c *gin.Context) {
 	id := c.Param("id")
-	var novelResponse NovelResponse
+
 	var novel models.Novel
-	if err := h.DB.Table("novels").Select("id, title, raw_title, author, description, thumbnail, updated_at, epub_url").
-		Where("id = ?", id).First(&novel).
-		Scan(&novelResponse).Error; err != nil {
+	if err := h.DB.Preload("Tags").Preload("Genres").First(&novel, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Novel not found"})
 			return
@@ -59,7 +57,57 @@ func (h *NovelHandler) GetNovel(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, novelResponse)
+	tags := make([]models.Tag, len(novel.Tags))
+	for i, tag := range novel.Tags {
+		tags[i] = *tag
+	}
+	// Create a custom response struct to include all the fields we want
+	response := struct {
+		ID          uint         `json:"id"`
+		Title       *string      `json:"title"`
+		RawTitle    *string      `json:"raw_title"`
+		Author      *string      `json:"author"`
+		Description *string      `json:"description"`
+		Thumbnail   *string      `json:"thumbnail"`
+		EpubURL     *string      `json:"epub_url"`
+		UpdatedAt   time.Time    `json:"updated_at"`
+		CreatedAt   time.Time    `json:"created_at"`
+		Tags        []models.Tag `json:"tags"`
+		Genres      []struct {
+			ID          uint   `json:"id"`
+			NameChinese string `json:"name_chinese"`
+			NamePinyin  string `json:"name_pinyin"`
+			NameEnglish string `json:"name_english"`
+		} `json:"genres"`
+	}{
+		ID:          novel.ID,
+		Title:       novel.Title,
+		RawTitle:    novel.RawTitle,
+		Author:      novel.Author,
+		Description: novel.Description,
+		Thumbnail:   novel.Thumbnail,
+		EpubURL:     novel.EpubURL,
+		UpdatedAt:   novel.UpdatedAt,
+		CreatedAt:   novel.CreatedAt,
+		Tags:        tags,
+	}
+
+	// Manually map genres to include only the fields we want
+	for _, genre := range novel.Genres {
+		response.Genres = append(response.Genres, struct {
+			ID          uint   `json:"id"`
+			NameChinese string `json:"name_chinese"`
+			NamePinyin  string `json:"name_pinyin"`
+			NameEnglish string `json:"name_english"`
+		}{
+			ID:          genre.ID,
+			NameChinese: genre.NameChinese,
+			NamePinyin:  genre.NamePinyin,
+			NameEnglish: genre.NameEnglish,
+		})
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *NovelHandler) GetNovels(c *gin.Context) {
@@ -507,4 +555,3 @@ func (h *NovelHandler) RetranslateChapters(c *gin.Context) {
 
 	c.Status(http.StatusOK)
 }
-
