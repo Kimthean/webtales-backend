@@ -5,6 +5,7 @@ import (
 	"go-novel/types"
 	"go-novel/utils"
 	"log"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -239,6 +240,27 @@ func (h *UserHandler) GetUserBookmarks(c *gin.Context) {
 		return
 	}
 
+	// Pagination parameters
+	var page, pageSize int = 1, 10
+	var err error
+
+	if qp := c.Query("page"); qp != "" {
+		page, err = strconv.Atoi(qp)
+		if err != nil || page < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid page number"})
+			return
+		}
+	}
+	if qp := c.Query("pageSize"); qp != "" {
+		pageSize, err = strconv.Atoi(qp)
+		if err != nil || pageSize < 1 || pageSize > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid page size"})
+			return
+		}
+	}
+
+	offset := (page - 1) * pageSize
+
 	var user models.User
 	if err := h.DB.First(&user, userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
@@ -246,18 +268,26 @@ func (h *UserHandler) GetUserBookmarks(c *gin.Context) {
 	}
 
 	var bookmarks []struct {
-		ID          uint      `json:"id"`
-		Title       string    `json:"title"`
-		Author      string    `json:"author"`
-		Description string    `json:"description"`
-		Thumbnail   string    `json:"thumbnail"`
-		UpdatedAt   time.Time `json:"updated_at"`
+		models.Novel
 	}
 
-	err := h.DB.Table("user_novels").
-		Select("novels.id, novels.title, novels.author, novels.description, novels.thumbnail, novels.updated_at").
+	// Get total count of bookmarks
+	var totalBookmarks int64
+	if err := h.DB.Table("user_novels").
+		Where("user_novels.user_id = ?", user.ID).
+		Count(&totalBookmarks).Error; err != nil {
+		log.Printf("Error counting bookmarks: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count bookmarks"})
+		return
+	}
+
+	// Fetch paginated bookmarks
+	err = h.DB.Table("user_novels").
+		Select("novels.*").
 		Joins("JOIN novels ON novels.id = user_novels.novel_id").
 		Where("user_novels.user_id = ?", user.ID).
+		Limit(pageSize).
+		Offset(offset).
 		Scan(&bookmarks).Error
 
 	if err != nil {
@@ -266,8 +296,19 @@ func (h *UserHandler) GetUserBookmarks(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"bookmarks": bookmarks})
+	// Calculate total pages
+	totalPages := int(math.Ceil(float64(totalBookmarks) / float64(pageSize)))
+
+	c.JSON(http.StatusOK, gin.H{
+		"bookmarks":      bookmarks,
+		"totalBookmarks": totalBookmarks,
+		"currentPage":    page,
+		"pageSize":       pageSize,
+		"totalPages":     totalPages,
+	})
 }
+
+
 
 func (h *UserHandler) GetBookmark(c *gin.Context) {
 	userID, exists := c.Get("userID")
