@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"go-novel/models"
+	"go-novel/utils"
 	"io"
 	"log"
 	"net/http"
@@ -69,6 +70,10 @@ func (c *Crawler) setLimitRules(collector *colly.Collector) {
 		RandomDelay: 2 * time.Second,
 	})
 	collector.Limit(&colly.LimitRule{
+		DomainGlob:  "*fanmtl.com*",
+		RandomDelay: 2 * time.Second,
+	})
+	collector.Limit(&colly.LimitRule{
 		DomainGlob:  "*lightnovelworld.co*",
 		RandomDelay: 4 * time.Second,
 	})
@@ -112,6 +117,8 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 	case strings.Contains(url, "wuxiabox.com"):
 		novel, err = c.crawlWuxiabox(url)
 	case strings.Contains(url, "wuxiaspot.com"):
+		novel, err = c.crawlWuxiaspot(url)
+	case strings.Contains(url, "fanmtl.com"):
 		novel, err = c.crawlWuxiaspot(url)
 	case strings.Contains(url, "lightnovelworld.co"):
 		novel, err = c.crawlLightNovelWorld(url)
@@ -478,6 +485,8 @@ func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 		chapters, err = c.extractWuxiaboxChapters(url)
 	case strings.Contains(url, "wuxiaspot.com"):
 		chapters, err = c.extractWuxiaboxChapters(url)
+	case strings.Contains(url, "fanmtl.com"):
+		chapters, err = c.extractWuxiaboxChapters(url)
 	case strings.Contains(url, "lightnovelworld.co/"):
 		chapters, err = c.extractLightNovelWorldChapters(url)
 	case strings.Contains(url, "69shuba.cx"):
@@ -676,7 +685,7 @@ func (c *Crawler) CrawlChapter(chapterURL string, chapterTitle string, chapterNu
 		return nil, fmt.Errorf("crawling chapter content: %w", err)
 	}
 
-	if strings.Contains(chapterURL, "wuxiabox") || strings.Contains(chapterURL, "lightnovelworld") || strings.Contains(chapterURL, "wuxiaspot") {
+	if utils.IsEnglishSource(chapterURL) {
 		chapter.TranslatedContent = &content
 	} else {
 		chapter.Content = &content
@@ -697,6 +706,8 @@ func (c *Crawler) crawlChapterContent(pageURL string) (string, error) {
 	case strings.Contains(pageURL, "wuxiabox.com"):
 		err = c.crawlWuxiaboxChapterContent(pageURL, &contentBuilder)
 	case strings.Contains(pageURL, "wuxiaspot.com"):
+		err = c.crawlWuxiaboxChapterContent(pageURL, &contentBuilder)
+	case strings.Contains(pageURL, "fanmtl.com"):
 		err = c.crawlWuxiaboxChapterContent(pageURL, &contentBuilder)
 	case strings.Contains(pageURL, "lightnovelworld.co"):
 		err = c.crawlLightNovelWorldChapterContent(pageURL, &contentBuilder)
