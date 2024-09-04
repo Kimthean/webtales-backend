@@ -14,7 +14,7 @@ func GenerateJWT(username, role string, id uint) (string, error) {
 		"username": username,
 		"role":     role,
 		"id":       id,
-		"exp":      time.Now().Add(time.Hour * 24).Unix(),
+		"exp":      time.Now().Add(time.Hour * 24 * 7).Unix(),
 	})
 
 	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
