@@ -128,8 +128,8 @@ func main() {
 		adminRoutes.DELETE("/novel/:id", novelHandler.DeleteNovelByID)
 		adminRoutes.POST("/retranslate", novelHandler.RetranslateChapters)
 		adminRoutes.DELETE("/genre/:id", genreHandler.DeleteGenre)
-		adminRoutes.POST("/reslug", novelHandler.ReSlugify)
-		adminRoutes.POST("/reslug/chapter", novelHandler.ReSlugChapter)
+		// adminRoutes.POST("/reslug", novelHandler.ReSlugify)
+		// adminRoutes.POST("/reslug/chapter", novelHandler.ReSlugChapter)
 
 		adminRoutes.POST("/update/:id", func(c *gin.Context) {
 			id, err := strconv.Atoi(c.Param("id"))
