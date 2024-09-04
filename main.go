@@ -16,6 +16,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -36,22 +37,22 @@ func main() {
 	}
 	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{}, &models.Genre{}, &models.Tag{}, &models.Progress{})
 
-	// redisURL := cfg.RedisURL
-	// redisURL = strings.TrimPrefix(redisURL, "redis://")
-	// parts := strings.Split(redisURL, "@")
-	// if len(parts) != 2 {
-	// 	log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
-	// }
-	// password := strings.TrimPrefix(parts[0], ":")
-	// address := parts[1]
-	// rdb := redis.NewClient(&redis.Options{
-	// 	Addr:     address,
-	// 	Password: password,
-	// })
-
+	redisURL := cfg.RedisURL
+	redisURL = strings.TrimPrefix(redisURL, "redis://")
+	parts := strings.Split(redisURL, "@")
+	if len(parts) != 2 {
+		log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
+	}
+	password := strings.TrimPrefix(parts[0], ":")
+	address := parts[1]
 	rdb := redis.NewClient(&redis.Options{
-		Addr: cfg.RedisURL,
+		Addr:     address,
+		Password: password,
 	})
+
+	// rdb := redis.NewClient(&redis.Options{
+	// 	Addr: cfg.RedisURL,
+	// })
 
 	err = utils.InitS3()
 	if err != nil {
@@ -63,7 +64,7 @@ func main() {
 	w := worker.NewWorker(crawler, db, rdb)
 	go w.Start(context.Background())
 
-	// gin.SetMode(gin.ReleaseMode)
+	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
 	r.Use(cors.New(cors.Config{
@@ -127,6 +128,8 @@ func main() {
 		adminRoutes.DELETE("/novel/:id", novelHandler.DeleteNovelByID)
 		adminRoutes.POST("/retranslate", novelHandler.RetranslateChapters)
 		adminRoutes.DELETE("/genre/:id", genreHandler.DeleteGenre)
+		adminRoutes.POST("/reslug", novelHandler.ReSlugify)
+		adminRoutes.POST("/reslug/chapter", novelHandler.ReSlugChapter)
 
 		adminRoutes.POST("/update/:id", func(c *gin.Context) {
 			id, err := strconv.Atoi(c.Param("id"))
