@@ -24,5 +24,4 @@ type GoogleOAuthResponse struct {
 
 type UpdateProfileRequest struct {
 	Username string `json:"username"`
-	// Add more fields as needed
 }

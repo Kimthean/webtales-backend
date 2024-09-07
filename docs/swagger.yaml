@@ -1,0 +1,404 @@
+basePath: /
+definitions:
+  handlers.ChapterResponse:
+    properties:
+      ID:
+        type: integer
+      number:
+        type: integer
+      slug:
+        type: string
+      translated_title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  handlers.NovelResponse:
+    properties:
+      author:
+        type: string
+      description:
+        type: string
+      epub_url:
+        type: string
+      id:
+        type: integer
+      raw_title:
+        type: string
+      thumbnail:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  handlers.NovelUpdateResponse:
+    properties:
+      author:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      epub_url:
+        type: string
+      id:
+        type: integer
+      last_chapter_date:
+        type: string
+      raw_title:
+        type: string
+      slug:
+        type: string
+      thumbnail:
+        type: string
+      title:
+        type: string
+      total_chapters_count:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: This is the API for WebTales novel service
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: WebTales API
+  version: "1.0"
+paths:
+  /admin/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a novel and its associated chapters by ID
+      parameters:
+      - description: Novel ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Novel and associated chapters deleted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete a novel
+      tags:
+      - admin
+  /admin/chapters/missing-translation:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of chapters that have missing or incomplete translations
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.ChapterResponse'
+            type: array
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: List chapters with missing translations
+      tags:
+      - admin
+    post:
+      consumes:
+      - application/json
+      description: Initiate re-translation of chapters with missing or incomplete
+        translations
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Re-translate chapters
+      tags:
+      - admin
+  /admin/retranslate:
+    post:
+      consumes:
+      - application/json
+      description: Initiate retranslation of all chapters
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Retranslation process initiated
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Retranslate chapters
+      tags:
+      - admin
+  /novel:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of all novels
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid page number or page size
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get paginated novels
+      tags:
+      - novels
+  /novel/{novelSlug}:
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a novel
+      parameters:
+      - description: Novel Slug
+        in: path
+        name: novelSlug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.NovelResponse'
+        "404":
+          description: Novel not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get a novel by slug
+      tags:
+      - novels
+  /novel/{novelSlug}/chapter/{chapterSlug}:
+    get:
+      consumes:
+      - application/json
+      description: Get details of a specific chapter by novel slug and chapter slug
+      parameters:
+      - description: Novel Slug
+        in: path
+        name: novelSlug
+        required: true
+        type: string
+      - description: Chapter Slug
+        in: path
+        name: chapterSlug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ChapterResponse'
+        "404":
+          description: Chapter not found
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get a specific chapter
+      tags:
+      - novels
+  /novel/{novelSlug}/paginate-chapters:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of chapters for a specific novel
+      parameters:
+      - description: Novel Slug
+        in: path
+        name: novelSlug
+        required: true
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "400":
+          description: Invalid page number or page size
+          schema:
+            type: string
+        "404":
+          description: Novel not found
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get paginated novel chapters
+      tags:
+      - novels
+  /novel/all:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all novels with their latest chapter information
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.NovelResponse'
+            type: array
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get all novels
+      tags:
+      - novels
+  /novel/latest:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of the 6 most recently added novels
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.NovelUpdateResponse'
+            type: array
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get latest novels
+      tags:
+      - novels
+  /novel/latest-update:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of the 6 most recently updated novels
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.NovelUpdateResponse'
+            type: array
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get latest novel updates
+      tags:
+      - novels
+  /novel/search:
+    get:
+      consumes:
+      - application/json
+      description: Search for novels by title, author, or description
+      parameters:
+      - description: Search query
+        in: query
+        name: q
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.NovelResponse'
+            type: array
+        "400":
+          description: Invalid input
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Search novels
+      tags:
+      - novels
+swagger: "2.0"

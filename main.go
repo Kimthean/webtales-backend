@@ -16,15 +16,32 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
+
+	_ "go-novel/docs"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/go-redis/redis/v8"
 )
 
+// @title WebTales API
+// @version 1.0
+// @description This is the API for WebTales novel service
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url http://www.swagger.io/support
+// @contact.email support@swagger.io
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:8080
+// @BasePath /
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -37,22 +54,22 @@ func main() {
 	}
 	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{}, &models.Genre{}, &models.Tag{}, &models.Progress{})
 
-	redisURL := cfg.RedisURL
-	redisURL = strings.TrimPrefix(redisURL, "redis://")
-	parts := strings.Split(redisURL, "@")
-	if len(parts) != 2 {
-		log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
-	}
-	password := strings.TrimPrefix(parts[0], ":")
-	address := parts[1]
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     address,
-		Password: password,
-	})
-
+	// redisURL := cfg.RedisURL
+	// redisURL = strings.TrimPrefix(redisURL, "redis://")
+	// parts := strings.Split(redisURL, "@")
+	// if len(parts) != 2 {
+	// 	log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
+	// }
+	// password := strings.TrimPrefix(parts[0], ":")
+	// address := parts[1]
 	// rdb := redis.NewClient(&redis.Options{
-	// 	Addr: cfg.RedisURL,
+	// 	Addr:     address,
+	// 	Password: password,
 	// })
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr: cfg.RedisURL,
+	})
 
 	err = utils.InitS3()
 	if err != nil {
@@ -64,8 +81,10 @@ func main() {
 	w := worker.NewWorker(crawler, db, rdb)
 	go w.Start(context.Background())
 
-	gin.SetMode(gin.ReleaseMode)
+	// gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
+
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"https://webtalesmtl.xyz", "http://localhost:4321"}, // Allowed origins
@@ -87,14 +106,13 @@ func main() {
 	// Novel routes
 	novelRoutes := r.Group("/novel")
 	{
-		novelRoutes.GET("/:id", novelHandler.GetNovel)
-		novelRoutes.GET("/:id/chapters", novelHandler.GetNovelChapters)
+		novelRoutes.GET("/:novelSlug", novelHandler.GetNovel)
 		novelRoutes.GET("/all", novelHandler.GetNovels)
 		novelRoutes.GET("/latest", novelHandler.GetLatestNovels)
 		novelRoutes.GET("/latest-update", novelHandler.GetLatestUpdate)
 		novelRoutes.GET("", novelHandler.GetPaginatedNovels)
-		novelRoutes.GET("/:id/chapter/:number", novelHandler.GetChapterByID)
-		novelRoutes.GET("/:id/paginate-chapters", novelHandler.GetNovelChaptersWithPage)
+		novelRoutes.GET("/:novelSlug/chapter/:chapterSlug", novelHandler.GetChapterBySlug)
+		novelRoutes.GET("/:novelSlug/paginate-chapters", novelHandler.GetNovelChaptersWithPage)
 		novelRoutes.GET("/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
 		novelRoutes.GET("/search", novelHandler.SearchNovels)
 		novelRoutes.POST("/convert-epub/:id", func(c *gin.Context) {

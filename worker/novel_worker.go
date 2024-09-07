@@ -71,7 +71,11 @@ func (w *Worker) processNovel(ctx context.Context, jobData string) error {
 		novel.RawTitle = novel.Title
 		novel.Title = &translateTitle
 		novel.Description = &translateDescription
+		slug := utils.Slugify(*novel.Title)
+		novel.Slug = &slug
 	}
+	slug := utils.Slugify(*novel.Title)
+	novel.Slug = &slug
 
 	if err := w.DB.Create(novel).Error; err != nil {
 		log.Printf("Error saving novel: %v", err)

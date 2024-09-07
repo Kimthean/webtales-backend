@@ -78,7 +78,7 @@ func (c *Crawler) setLimitRules(collector *colly.Collector) {
 		RandomDelay: 4 * time.Second,
 	})
 	collector.Limit(&colly.LimitRule{
-		DomainGlob:  "*69shuba.cx*",
+		DomainGlob:  "*69shu.me*",
 		Parallelism: 2,
 		RandomDelay: 2 * time.Second,
 	})
@@ -122,7 +122,7 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 		novel, err = c.crawlWuxiaspot(url)
 	case strings.Contains(url, "lightnovelworld.co"):
 		novel, err = c.crawlLightNovelWorld(url)
-	case strings.Contains(url, "69shuba.cx"):
+	case strings.Contains(url, "69shu.me"):
 		novel, err = c.crawl69Shu(url)
 	default:
 		return nil, fmt.Errorf("unsupported URL: %s", url)
@@ -489,7 +489,7 @@ func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 		chapters, err = c.extractWuxiaboxChapters(url)
 	case strings.Contains(url, "lightnovelworld.co/"):
 		chapters, err = c.extractLightNovelWorldChapters(url)
-	case strings.Contains(url, "69shuba.cx"):
+	case strings.Contains(url, "69shu.me"):
 		chapters, err = c.extract69shuChapter(url)
 	default:
 		return nil, fmt.Errorf("unsupported URL for chapter extraction: %s", url)
