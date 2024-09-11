@@ -19,12 +19,30 @@ import (
 	"strings"
 	"time"
 
+	_ "go-novel/docs"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/go-redis/redis/v8"
 )
 
+// @title WebTales API
+// @version 1.0
+// @description This is the API for WebTales novel service
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url http://www.swagger.io/support
+// @contact.email support@swagger.io
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:8080
+// @BasePath /
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -35,7 +53,7 @@ func main() {
 	if err != nil {
 		panic("failed to connect database")
 	}
-	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{}, &models.Genre{}, &models.Tag{}, &models.Progress{})
+	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{}, &models.Genre{}, &models.Tag{}, &models.Progress{}, &models.Bookmark{})
 
 	redisURL := cfg.RedisURL
 	redisURL = strings.TrimPrefix(redisURL, "redis://")
@@ -67,6 +85,8 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"https://webtalesmtl.xyz", "http://localhost:4321"}, // Allowed origins
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},                     // Allowed methods
@@ -87,15 +107,14 @@ func main() {
 	// Novel routes
 	novelRoutes := r.Group("/novel")
 	{
-		novelRoutes.GET("/:id", novelHandler.GetNovel)
-		novelRoutes.GET("/:id/chapters", novelHandler.GetNovelChapters)
+		novelRoutes.GET("/:novelSlug", novelHandler.GetNovel)
 		novelRoutes.GET("/all", novelHandler.GetNovels)
 		novelRoutes.GET("/latest", novelHandler.GetLatestNovels)
 		novelRoutes.GET("/latest-update", novelHandler.GetLatestUpdate)
 		novelRoutes.GET("", novelHandler.GetPaginatedNovels)
-		novelRoutes.GET("/:id/chapter/:number", novelHandler.GetChapterByID)
-		novelRoutes.GET("/:id/paginate-chapters", novelHandler.GetNovelChaptersWithPage)
-		novelRoutes.GET("/chapters-stats/:id", novelHandler.GetNovelTranslationStatus)
+		novelRoutes.GET("/:novelSlug/chapter/:chapterSlug", novelHandler.GetChapterBySlug)
+		novelRoutes.GET("/:novelSlug/paginate-chapters", novelHandler.GetNovelChaptersWithPage)
+		novelRoutes.GET("/chapters-stats/:novelSlug", novelHandler.GetNovelTranslationStatus)
 		novelRoutes.GET("/search", novelHandler.SearchNovels)
 		novelRoutes.POST("/convert-epub/:id", func(c *gin.Context) {
 			novelID := c.Param("id")
@@ -163,6 +182,7 @@ func main() {
 		authRoutes.POST("/signup", authHandler.SignUp)
 		authRoutes.POST("/login", authHandler.Login)
 		authRoutes.POST("/google/callback", authHandler.GoogleCallback)
+		authRoutes.POST("/refresh", authHandler.Refresh)
 	}
 
 	userHandler := &user.UserHandler{DB: db}
@@ -178,9 +198,9 @@ func main() {
 		userRoutes.GET("/bookmarks", userHandler.GetUserBookmarks)
 		userRoutes.GET("/bookmark/:novelID", userHandler.GetBookmark)
 		userRoutes.DELETE("/bookmark/:novelID", userHandler.RemoveNovelFromBookmark)
-		userRoutes.GET("/progress/:novelID", userHandler.GetReadingProgress)
-		userRoutes.PUT("/progress/:novelID/:chapterID", userHandler.UpdateReadingProgress)
-
+		userRoutes.GET("/progress/:novelSlug", userHandler.GetReadingProgress)
+		userRoutes.PUT("/progress/:novelSlug/:chapterSlug", userHandler.UpdateReadingProgress)
+		userRoutes.GET("/history", userHandler.GetReadingHistory)
 	}
 
 	// Health check

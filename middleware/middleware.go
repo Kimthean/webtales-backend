@@ -10,39 +10,25 @@ import (
 
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		tokenStr := c.GetHeader("Authorization")
-		if tokenStr == "" {
+		accessToken := c.GetHeader("Authorization")
+		if accessToken == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
 			return
 		}
 
-		tokenStr = strings.TrimPrefix(tokenStr, "Bearer ")
+		accessToken = strings.TrimPrefix(accessToken, "Bearer ")
 
-		_, claims, err := utils.ValidateToken(tokenStr)
+		claims, err := utils.ValidateAccessToken(accessToken)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid access token"})
 			return
 		}
 
-		username, ok := claims["username"].(string)
-		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid username in token"})
-			return
-		}
+		userID := uint(claims["id"].(float64))
+		username := claims["username"].(string)
+		role := claims["role"].(string)
 
-		role, ok := claims["role"].(string)
-		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid role in token"})
-			return
-		}
-
-		id, ok := claims["id"].(float64)
-		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID in token"})
-			return
-		}
-
-		c.Set("userID", uint(id))
+		c.Set("userID", userID)
 		c.Set("username", username)
 		c.Set("role", role)
 

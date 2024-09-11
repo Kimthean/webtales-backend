@@ -1,10 +1,19 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type Novel struct {
-	gorm.Model
+	ID        uint           `json:"id" gorm:"primarykey"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `json:"deleted_at,omitempty" gorm:"index"`
+
 	Title       *string   `json:"title"`
+	Slug        *string   `json:"slug"`
 	RawTitle    *string   `json:"raw_title"`
 	Thumbnail   *string   `json:"thumbnail"`
 	Author      *string   `json:"author"`
@@ -22,6 +31,7 @@ type Chapter struct {
 	NovelID           uint    `gorm:"index:idx_novel_number,uniqueComposite"`
 	Number            int     `gorm:"index:idx_novel_number,uniqueComposite"`
 	Title             string  `json:"title"`
+	Slug              string  `json:"slug"`
 	TranslatedTitle   *string `json:"translated_title"`
 	Content           *string `json:"content"`
 	TranslatedContent *string `json:"translated_content"`

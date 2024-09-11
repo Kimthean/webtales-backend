@@ -24,5 +24,9 @@ type GoogleOAuthResponse struct {
 
 type UpdateProfileRequest struct {
 	Username string `json:"username"`
-	// Add more fields as needed
+}
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required"`
+	NewPassword     string `json:"new_password" binding:"required"`
 }

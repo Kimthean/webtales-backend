@@ -14,7 +14,7 @@ type User struct {
 	Email        string     `json:"email" gorm:"uniqueIndex"`
 	Role         string     `gorm:"default:user"`
 	Provider     string     `gorm:"default:credential"`
-	Bookmarks    []Novel    `gorm:"many2many:user_novels;" json:"bookmarks,omitempty"`
+	Bookmarks    []Bookmark `json:"bookmarks,omitempty"`
 	Progress     []Progress `json:"progress,omitempty"`
 }
 
@@ -24,4 +24,11 @@ type Progress struct {
 	NovelID    uint      `gorm:"index"` // Foreign key referencing Novel
 	ChapterID  uint      `gorm:"index"` // Foreign key referencing Chapter
 	LastReadAt time.Time `gorm:"index"` // Timestamp of the last read
+}
+
+type Bookmark struct {
+	gorm.Model
+	UserID    uint      `gorm:"index"` // Foreign key referencing User
+	NovelID   uint      `gorm:"index"` // Foreign key referencing Novel
+	CreatedAt time.Time `gorm:"index"` // Timestamp of when the bookmark was created
 }

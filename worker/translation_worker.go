@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go-novel/lib"
 	"go-novel/models"
+	"go-novel/utils"
 	"log"
 	"time"
 
@@ -83,6 +84,8 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 			case "title":
 				chapter.TranslatedTitle = translated
 				chapter.TranslationStatus = "title_translated"
+				slug := utils.Slugify(*translated)
+				chapter.Slug = slug
 			case "content":
 				chapter.TranslatedContent = translated
 				chapter.TranslationStatus = "content_translated"
