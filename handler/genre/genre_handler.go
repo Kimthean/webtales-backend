@@ -13,6 +13,19 @@ type GenreHandler struct {
 	DB *gorm.DB
 }
 
+type CreateGenreInput struct {
+	NameChinese string `json:"name_chinese" binding:"required"`
+	NamePinyin  string `json:"name_pinyin" binding:"required"`
+	NameEnglish string `json:"name_english" binding:"required"`
+}
+
+// GetGenres godoc
+// @Summary Get all genres
+// @Description Retrieve a list of all genres
+// @Tags genres
+// @Accept json
+// @Produce json
+// @Router /genre [get]
 func (h *GenreHandler) GetGenres(c *gin.Context) {
 	var genres []models.Genre
 	if err := h.DB.Find(&genres).Error; err != nil {
@@ -23,12 +36,16 @@ func (h *GenreHandler) GetGenres(c *gin.Context) {
 	c.JSON(http.StatusOK, genres)
 }
 
+// CreateGenre godoc
+// @Summary Create a new genre
+// @Description Create a new genre with the provided information
+// @Tags genres
+// @Accept json
+// @Produce json
+// @Param genre body CreateGenreInput true "Genre information"
+// @Router /genre [post]
 func (h *GenreHandler) CreateGenre(c *gin.Context) {
-	var input struct {
-		NameChinese string `json:"name_chinese" binding:"required"`
-		NamePinyin  string `json:"name_pinyin" binding:"required"`
-		NameEnglish string `json:"name_english" binding:"required"`
-	}
+	var input CreateGenreInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -49,6 +66,15 @@ func (h *GenreHandler) CreateGenre(c *gin.Context) {
 	c.JSON(http.StatusCreated, genre)
 }
 
+// AddGenreToNovel godoc
+// @Summary Add a genre to a novel
+// @Description Associate a genre with a specific novel
+// @Tags genres
+// @Accept json
+// @Produce json
+// @Param novelID path int true "Novel ID"
+// @Param genreID path int true "Genre ID"
+// @Router /genre/{novelID}/genre/{genreID} [post]
 func (h *GenreHandler) AddGenreToNovel(c *gin.Context) {
 	novelID, err := strconv.ParseUint(c.Param("novelID"), 10, 32)
 	if err != nil {
@@ -82,6 +108,15 @@ func (h *GenreHandler) AddGenreToNovel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Genre added to novel successfully"})
 }
 
+// DeleteGenreFromNovel godoc
+// @Summary Remove a genre from a novel
+// @Description Remove the association between a genre and a specific novel
+// @Tags genres
+// @Accept json
+// @Produce json
+// @Param novelID path int true "Novel ID"
+// @Param genreID path int true "Genre ID"
+// @Router /genre/{novelID}/genre/{genreID} [delete]
 func (h *GenreHandler) DeleteGenreFromNovel(c *gin.Context) {
 	novelID, err := strconv.ParseUint(c.Param("novelID"), 10, 32)
 	if err != nil {
@@ -115,6 +150,14 @@ func (h *GenreHandler) DeleteGenreFromNovel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Genre deleted from novel successfully"})
 }
 
+// GetNovelGenres godoc
+// @Summary Get genres of a novel
+// @Description Retrieve all genres associated with a specific novel
+// @Tags genres
+// @Accept json
+// @Produce json
+// @Param novelID path int true "Novel ID"
+// @Router /genre/{novelID} [get]
 func (h *GenreHandler) GetNovelGenres(c *gin.Context) {
 	novelID, err := strconv.ParseUint(c.Param("novelID"), 10, 32)
 	if err != nil {
@@ -131,6 +174,14 @@ func (h *GenreHandler) GetNovelGenres(c *gin.Context) {
 	c.JSON(http.StatusOK, novel.Genres)
 }
 
+// DeleteGenre godoc
+// @Summary Delete a genre
+// @Description Delete a genre by its ID
+// @Tags genres
+// @Accept json
+// @Produce json
+// @Param genreID path int true "Genre ID"
+// @Router /genre/{genreID} [delete]
 func (h *GenreHandler) DeleteGenre(c *gin.Context) {
 	genreID, err := strconv.ParseUint(c.Param("genreID"), 10, 32)
 	if err != nil {
@@ -151,6 +202,13 @@ func (h *GenreHandler) DeleteGenre(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Genre deleted successfully"})
 }
 
+// PopulateGenres godoc
+// @Summary Populate genres
+// @Description Populate the database with predefined genres
+// @Tags genres
+// @Accept json
+// @Produce json
+// @Router /genre/populate [post]
 func (h *GenreHandler) PopulateGenres(c *gin.Context) {
 	genres := []models.Genre{
 		{NameChinese: "仙侠", NamePinyin: "Xianxia", NameEnglish: "Immortal Heroes"},

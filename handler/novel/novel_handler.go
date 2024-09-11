@@ -74,71 +74,61 @@ type NovelUpdateResponse struct {
 // @Failure 500 {object} string "Internal server error"
 // @Router /novel/{novelSlug} [get]
 func (h *NovelHandler) GetNovel(c *gin.Context) {
-	slug := c.Param("novelSlug")
+    slug := c.Param("novelSlug")
 
-	var novel models.Novel
-	if err := h.DB.Preload("Tags").Preload("Genres").Where("slug = ?", slug).First(&novel).Error; err != nil {
+    var novel models.Novel
+    if err := h.DB.Preload("Tags").Preload("Genres").Where("slug = ?", slug).First(&novel).Error; err != nil {
+        if err == gorm.ErrRecordNotFound {
+            log.Println("Novel not found")
+            c.JSON(http.StatusNotFound, gin.H{"error": "Novel not found"})
+            return
+        }
+        log.Printf("Error fetching novel: %v", err)
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
 
-		if err == gorm.ErrRecordNotFound {
-			log.Println("Novel not found")
-			c.JSON(http.StatusNotFound, gin.H{"error": "Novel not found"})
-			return
-		}
-		log.Printf("Error fetching novel: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+    var firstChapter models.Chapter
+    if err := h.DB.Where("novel_id = ?", novel.ID).Order("number ASC").First(&firstChapter).Error; err != nil {
+        if err == gorm.ErrRecordNotFound {
+            log.Println("No chapters found for the novel")
+            c.JSON(http.StatusOK, gin.H{
+                "id":          novel.ID,
+                "title":       novel.Title,
+                "raw_title":   novel.RawTitle,
+                "author":      novel.Author,
+                "description": novel.Description,
+                "thumbnail":   novel.Thumbnail,
+                "epub_url":    novel.EpubURL,
+                "updated_at":  novel.UpdatedAt,
+                "created_at":  novel.CreatedAt,
+                "tags":        novel.Tags,
+                "genres":      novel.Genres,
+                "first_chapter_slug": "",
+                "first_chapter_number": 0,
+            })
+            return
+        }
+        log.Printf("Error fetching first chapter: %v", err)
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
 
-	tags := make([]models.Tag, len(novel.Tags))
-	for i, tag := range novel.Tags {
-		tags[i] = *tag
-	}
-
-	response := struct {
-		ID          uint         `json:"id"`
-		Title       *string      `json:"title"`
-		RawTitle    *string      `json:"raw_title"`
-		Author      *string      `json:"author"`
-		Description *string      `json:"description"`
-		Thumbnail   *string      `json:"thumbnail"`
-		EpubURL     *string      `json:"epub_url"`
-		UpdatedAt   time.Time    `json:"updated_at"`
-		CreatedAt   time.Time    `json:"created_at"`
-		Tags        []models.Tag `json:"tags"`
-		Genres      []struct {
-			ID          uint   `json:"id"`
-			NameChinese string `json:"name_chinese"`
-			NamePinyin  string `json:"name_pinyin"`
-			NameEnglish string `json:"name_english"`
-		} `json:"genres"`
-	}{
-		ID:          novel.ID,
-		Title:       novel.Title,
-		RawTitle:    novel.RawTitle,
-		Author:      novel.Author,
-		Description: novel.Description,
-		Thumbnail:   novel.Thumbnail,
-		EpubURL:     novel.EpubURL,
-		UpdatedAt:   novel.UpdatedAt,
-		CreatedAt:   novel.CreatedAt,
-		Tags:        tags,
-	}
-
-	for _, genre := range novel.Genres {
-		response.Genres = append(response.Genres, struct {
-			ID          uint   `json:"id"`
-			NameChinese string `json:"name_chinese"`
-			NamePinyin  string `json:"name_pinyin"`
-			NameEnglish string `json:"name_english"`
-		}{
-			ID:          genre.ID,
-			NameChinese: genre.NameChinese,
-			NamePinyin:  genre.NamePinyin,
-			NameEnglish: genre.NameEnglish,
-		})
-	}
-
-	c.JSON(http.StatusOK, response)
+    c.JSON(http.StatusOK, gin.H{
+        "id":              novel.ID,
+        "title":           novel.Title,
+        "raw_title":       novel.RawTitle,
+        "author":          novel.Author,
+        "description":     novel.Description,
+        "thumbnail":       novel.Thumbnail,
+        "epub_url":        novel.EpubURL,
+        "updated_at":      novel.UpdatedAt,
+        "created_at":      novel.CreatedAt,
+        "tags":            novel.Tags,
+        "genres":          novel.Genres,
+        "first_chapter_slug": firstChapter.Slug,
+        "first_chapter_number": firstChapter.Number,
+    })
 }
 
 // GetNovels godoc
@@ -198,7 +188,7 @@ func (h *NovelHandler) GetLatestNovels(c *gin.Context) {
 		Group("novel_id")
 
 	if err := h.DB.Table("novels").
-		Select("novels.id, novels.title, novel.slug,novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.created_at, novels.epub_url, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
+		Select("novels.id, novels.title, novels.slug, novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.created_at, novels.epub_url, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
 		Joins("LEFT JOIN (?) as cc ON cc.novel_id = novels.id", chapterCountSubquery).
 		Where("novels.deleted_at IS NULL").
 		Order("novels.created_at DESC").
@@ -232,7 +222,7 @@ func (h *NovelHandler) GetLatestUpdate(c *gin.Context) {
 		Group("novel_id")
 
 	if err := h.DB.Table("novels").
-		Select("novels.id, novels.title, novel.slug, novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.created_at, novels.epub_url, lc.last_chapter_date, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
+		Select("novels.id, novels.title, novels.slug, novels.raw_title, novels.description, novels.thumbnail, novels.author, novels.updated_at, novels.created_at, novels.epub_url, lc.last_chapter_date, COALESCE(cc.total_chapters_count, 0) as total_chapters_count").
 		Joins("JOIN (?) as lc ON lc.novel_id = novels.id", latestChapterSubquery).
 		Joins("LEFT JOIN (?) as cc ON cc.novel_id = novels.id", chapterCountSubquery).
 		Order("lc.last_chapter_date DESC").
@@ -281,7 +271,6 @@ func (h *NovelHandler) GetNovelChaptersWithPage(c *gin.Context) {
 
 	offset := (page - 1) * pageSize
 
-	// Retrieve the novel ID using the slug
 	var novelID int
 	if err := h.DB.Table("novels").Select("id").Where("slug = ?", novelSlug).Scan(&novelID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -301,7 +290,7 @@ func (h *NovelHandler) GetNovelChaptersWithPage(c *gin.Context) {
 	}
 
 	if err := h.DB.Table("chapters").
-		Select("id, number, updated_at, translated_title, translation_status, slug").
+		Select("id, number, slug, updated_at, translated_title, translation_status").
 		Where("novel_id = ?", novelID).
 		Order("number ASC").
 		Limit(pageSize).
@@ -353,12 +342,14 @@ func (h *NovelHandler) GetChapterBySlug(c *gin.Context) {
 		NovelID           string    `json:"novel_id"`
 		NovelTitle        string    `json:"novel_title"`
 		NextChapterSlug   string    `json:"next_chapter_slug,omitempty"`
+		PrevChapterSlug   string    `json:"prev_chapter_slug,omitempty"`
 	}
 
 	if err := h.DB.Table("chapters").
-		Select("chapters.id, chapters.number, chapters.slug, chapters.updated_at, chapters.translated_title, chapters.translation_status, chapters.translated_content, novels.title as novel_title, novels.id as novel_id, next_chapter.slug as next_chapter_slug").
+		Select("chapters.id, chapters.number, chapters.slug, chapters.updated_at, chapters.translated_title, chapters.translation_status, chapters.translated_content, novels.title as novel_title, novels.id as novel_id, next_chapter.slug as next_chapter_slug, prev_chapter.slug as prev_chapter_slug").
 		Joins("join novels on novels.id = chapters.novel_id").
 		Joins("left join chapters as next_chapter on next_chapter.novel_id = chapters.novel_id and next_chapter.number = chapters.number + 1").
+		Joins("left join chapters as prev_chapter on prev_chapter.novel_id = chapters.novel_id and prev_chapter.number = chapters.number - 1").
 		Where("novels.slug = ? AND chapters.slug = ?", novelSlug, chapterSlug).
 		First(&response).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -384,13 +375,25 @@ func (h *NovelHandler) GetChapterBySlug(c *gin.Context) {
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /novel/{novelSlug} [get]
 func (h *NovelHandler) GetNovelTranslationStatus(c *gin.Context) {
-	id := c.Param("id")
+	novelSlug := c.Param("novelSlug")
+	var novel models.Novel
 	var totalChapters, translatedChapters int64
-	if err := h.DB.Model(&models.Chapter{}).Where("novel_id = ?", id).Count(&totalChapters).Error; err != nil {
+
+	if err := h.DB.Model(&models.Novel{}).Where("slug = ?", novelSlug).First(&novel).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Novel not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.DB.Model(&models.Chapter{}).Where("novel_id = ? AND translation_status = ?", id, "completed").Count(&translatedChapters).Error; err != nil {
+
+	if err := h.DB.Model(&models.Chapter{}).Where("novel_id = ?", novel.ID).Count(&totalChapters).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.DB.Model(&models.Chapter{}).Where("novel_id = ? AND translation_status = ?", novel.ID, "completed").Count(&translatedChapters).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -400,7 +403,9 @@ func (h *NovelHandler) GetNovelTranslationStatus(c *gin.Context) {
 		status = "completed"
 	}
 
+	// Return the translation status
 	c.JSON(http.StatusOK, gin.H{
+		"novel_id":            novel.ID,
 		"total_chapters":      totalChapters,
 		"translated_chapters": translatedChapters,
 		"status":              status,
@@ -745,7 +750,7 @@ func (h *NovelHandler) ReSlugChapter(c *gin.Context) {
 		}
 
 		if len(chapters) == 0 {
-			break // No more chapters to process
+			break
 		}
 
 		for _, chapter := range chapters {

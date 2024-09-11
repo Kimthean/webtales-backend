@@ -1,5 +1,23 @@
 basePath: /
 definitions:
+  handler.GoogleCallbackRequest:
+    properties:
+      code:
+        type: string
+      email:
+        type: string
+      googleId:
+        type: string
+      name:
+        type: string
+      picture:
+        type: string
+    type: object
+  handler.RefreshRequest:
+    properties:
+      refreshToken:
+        type: string
+    type: object
   handlers.ChapterResponse:
     properties:
       ID:
@@ -12,6 +30,19 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  handlers.CreateGenreInput:
+    properties:
+      name_chinese:
+        type: string
+      name_english:
+        type: string
+      name_pinyin:
+        type: string
+    required:
+    - name_chinese
+    - name_english
+    - name_pinyin
     type: object
   handlers.NovelResponse:
     properties:
@@ -57,6 +88,44 @@ definitions:
       total_chapters_count:
         type: integer
       updated_at:
+        type: string
+    type: object
+  types.ChangePasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+    required:
+    - current_password
+    - new_password
+    type: object
+  types.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  types.SignupRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - email
+    - password
+    - username
+    type: object
+  types.UpdateProfileRequest:
+    properties:
+      username:
         type: string
     type: object
 host: localhost:8080
@@ -162,6 +231,207 @@ paths:
       summary: Retranslate chapters
       tags:
       - admin
+  /admin/users:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a list of all users (admin only)
+      produces:
+      - application/json
+      responses: {}
+      security:
+      - ApiKeyAuth: []
+      summary: Get all users
+      tags:
+      - admin
+  /auth/google/callback:
+    post:
+      consumes:
+      - application/json
+      description: Process Google OAuth callback and create or update user
+      parameters:
+      - description: Google callback data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.GoogleCallbackRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: Handle Google OAuth callback
+      tags:
+      - auth
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate a user and return a JWT token
+      parameters:
+      - description: User login credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/types.LoginRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: Authenticate a user
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Refresh access token using refresh token
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RefreshRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: Refresh access token
+      tags:
+      - auth
+  /auth/signup:
+    post:
+      consumes:
+      - application/json
+      description: Create a new user account
+      parameters:
+      - description: User signup information
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/types.SignupRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: Register a new user
+      tags:
+      - auth
+  /genre:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a list of all genres
+      produces:
+      - application/json
+      responses: {}
+      summary: Get all genres
+      tags:
+      - genres
+    post:
+      consumes:
+      - application/json
+      description: Create a new genre with the provided information
+      parameters:
+      - description: Genre information
+        in: body
+        name: genre
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.CreateGenreInput'
+      produces:
+      - application/json
+      responses: {}
+      summary: Create a new genre
+      tags:
+      - genres
+  /genre/{genreID}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a genre by its ID
+      parameters:
+      - description: Genre ID
+        in: path
+        name: genreID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses: {}
+      summary: Delete a genre
+      tags:
+      - genres
+  /genre/{novelID}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve all genres associated with a specific novel
+      parameters:
+      - description: Novel ID
+        in: path
+        name: novelID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses: {}
+      summary: Get genres of a novel
+      tags:
+      - genres
+  /genre/{novelID}/genre/{genreID}:
+    delete:
+      consumes:
+      - application/json
+      description: Remove the association between a genre and a specific novel
+      parameters:
+      - description: Novel ID
+        in: path
+        name: novelID
+        required: true
+        type: integer
+      - description: Genre ID
+        in: path
+        name: genreID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses: {}
+      summary: Remove a genre from a novel
+      tags:
+      - genres
+    post:
+      consumes:
+      - application/json
+      description: Associate a genre with a specific novel
+      parameters:
+      - description: Novel ID
+        in: path
+        name: novelID
+        required: true
+        type: integer
+      - description: Genre ID
+        in: path
+        name: genreID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses: {}
+      summary: Add a genre to a novel
+      tags:
+      - genres
+  /genre/populate:
+    post:
+      consumes:
+      - application/json
+      description: Populate the database with predefined genres
+      produces:
+      - application/json
+      responses: {}
+      summary: Populate genres
+      tags:
+      - genres
   /novel:
     get:
       consumes:
@@ -366,6 +636,52 @@ paths:
       summary: Get latest novel updates
       tags:
       - novels
+  /novel/reading-history:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of novels and last read chapters for the authenticated
+        user
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get user's reading history
+      tags:
+      - novels
   /novel/search:
     get:
       consumes:
@@ -401,4 +717,450 @@ paths:
       summary: Search novels
       tags:
       - novels
+  /user/bookmark/{novelID}:
+    delete:
+      consumes:
+      - application/json
+      description: Remove a novel from the authenticated user's bookmarks
+      parameters:
+      - description: Novel ID
+        in: path
+        name: novelID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Novel removed from bookmarks successfully
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid novel ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: User not authenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to remove novel from bookmarks
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Remove novel from bookmarks
+      tags:
+      - user
+    get:
+      consumes:
+      - application/json
+      description: Check if a specific novel is bookmarked by the authenticated user
+      parameters:
+      - description: Novel ID
+        in: path
+        name: novelID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: Invalid novel ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: User not authenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to check bookmark status
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Check if novel is bookmarked
+      tags:
+      - user
+    post:
+      consumes:
+      - application/json
+      description: Add a novel to the authenticated user's bookmarks
+      parameters:
+      - description: Novel ID
+        in: path
+        name: novelID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Novel added to bookmarks successfully
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid novel ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: User not authenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User or novel not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Novel already bookmarked
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to add novel to bookmarks
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Add novel to bookmarks
+      tags:
+      - user
+  /user/bookmarks:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of the authenticated user's bookmarked novels
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid page number or page size
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: User not authenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to fetch bookmarks
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get user bookmarks
+      tags:
+      - user
+  /user/change-password:
+    put:
+      consumes:
+      - application/json
+      description: Change the password for the authenticated user
+      parameters:
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Password change request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/types.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Password changed successfully
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Change user password
+      tags:
+      - user
+  /user/me:
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about the currently authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: User not authenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get current user
+      tags:
+      - user
+  /user/profile:
+    put:
+      consumes:
+      - application/json
+      description: Update the profile information of the authenticated user
+      parameters:
+      - description: Profile update information
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/types.UpdateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Profile updated successfully
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid request body
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: User not authenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to update profile
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update user profile
+      tags:
+      - user
+  /user/profile-picture:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload a new profile picture for the authenticated user
+      parameters:
+      - description: Profile picture file
+        in: formData
+        name: profile_picture
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Profile picture updated successfully
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid file type or size
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: User not authenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to upload profile picture
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Upload profile picture
+      tags:
+      - user
+  /user/progress/{novelSlug}:
+    get:
+      consumes:
+      - application/json
+      description: Get the reading progress for a specific novel
+      parameters:
+      - description: Novel Slug
+        in: path
+        name: novelSlug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get reading progress
+      tags:
+      - user
+  /user/progress/{novelSlug}/{chapterSlug}:
+    put:
+      consumes:
+      - application/json
+      description: Update the reading progress for a specific novel and chapter
+      parameters:
+      - description: Novel Slug
+        in: path
+        name: novelSlug
+        required: true
+        type: string
+      - description: Chapter Slug
+        in: path
+        name: chapterSlug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reading progress updated successfully
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: User not authenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Novel or chapter not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to update reading progress
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update reading progress
+      tags:
+      - user
 swagger: "2.0"
