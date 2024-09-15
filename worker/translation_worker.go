@@ -31,7 +31,7 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 			log.Println("Stopping translation queue processing")
 			return
 		default:
-			result, err := w.Redis.BLPop(ctx, 1*time.Second, translationQueueKey).Result()
+			result, err := w.Redis.BLPop(ctx, 0*time.Second, translationQueueKey).Result()
 			if err == redis.Nil {
 				if len(completedJobs) > 0 {
 					w.checkMissingTranslations(completedJobs)
@@ -84,8 +84,7 @@ func (w *Worker) processTranslationQueue(ctx context.Context) {
 			case "title":
 				chapter.TranslatedTitle = translated
 				chapter.TranslationStatus = "title_translated"
-				slug := utils.Slugify(*translated)
-				chapter.Slug = slug
+				chapter.Slug = utils.Slugify(*translated)
 			case "content":
 				chapter.TranslatedContent = translated
 				chapter.TranslationStatus = "content_translated"

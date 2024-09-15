@@ -16,7 +16,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	_ "go-novel/docs"
@@ -55,22 +54,22 @@ func main() {
 	}
 	db.AutoMigrate(&models.Novel{}, &models.Chapter{}, &models.User{}, &models.Genre{}, &models.Tag{}, &models.Progress{}, &models.Bookmark{})
 
-	redisURL := cfg.RedisURL
-	redisURL = strings.TrimPrefix(redisURL, "redis://")
-	parts := strings.Split(redisURL, "@")
-	if len(parts) != 2 {
-		log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
-	}
-	password := strings.TrimPrefix(parts[0], ":")
-	address := parts[1]
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     address,
-		Password: password,
-	})
-
+	// redisURL := cfg.RedisURL
+	// redisURL = strings.TrimPrefix(redisURL, "redis://")
+	// parts := strings.Split(redisURL, "@")
+	// if len(parts) != 2 {
+	// 	log.Fatalf("Invalid Redis URL format: %s", cfg.RedisURL)
+	// }
+	// password := strings.TrimPrefix(parts[0], ":")
+	// address := parts[1]
 	// rdb := redis.NewClient(&redis.Options{
-	// 	Addr: cfg.RedisURL,
+	// 	Addr:     address,
+	// 	Password: password,
 	// })
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr: cfg.RedisURL,
+	})
 
 	err = utils.InitS3()
 	if err != nil {
@@ -82,7 +81,7 @@ func main() {
 	w := worker.NewWorker(crawler, db, rdb)
 	go w.Start(context.Background())
 
-	gin.SetMode(gin.ReleaseMode)
+	// gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -164,15 +163,7 @@ func main() {
 
 			c.JSON(http.StatusOK, gin.H{"message": "Update process initiated"})
 		})
-		adminRoutes.POST("/crawl", func(c *gin.Context) {
-			url := c.Query("url")
-			err := w.EnqueueNovel(url)
-			if err != nil {
-				c.String(http.StatusInternalServerError, "Failed to enqueue novel")
-				return
-			}
-			c.String(http.StatusOK, "Novel queued for crawling")
-		})
+		adminRoutes.POST("/crawl", novelHandler.CrawlNovel)
 
 	}
 

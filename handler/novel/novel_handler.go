@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"go-novel/lib"
 	"go-novel/models"
 	"go-novel/utils"
@@ -62,6 +63,37 @@ type NovelUpdateResponse struct {
 	TotalChaptersCount int       `json:"total_chapters_count"`
 }
 
+// CrawlNovel godoc
+// @Summary Crawl a novel
+// @Description Crawl a novel from the given URL and optionally use AI for translation
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Param url query string true "URL to crawl"
+// @Param ai query bool false "Use AI for translation" default(false)
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} string "Bad request"
+// @Failure 500 {object} string "Internal server error"
+// @Router /admin/crawl [post]
+func (h *NovelHandler) CrawlNovel(c *gin.Context) {
+	url := c.Query("url")
+
+	if url == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "URL is required"})
+		return
+	}
+
+	if err := h.Worker.EnqueueNovel(url); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to enqueue novel: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Novel crawling initiated",
+		"url":     url,
+	})
+}
+
 // GetNovel godoc
 // @Summary Get a novel by slug
 // @Description Get detailed information about a novel
@@ -74,61 +106,61 @@ type NovelUpdateResponse struct {
 // @Failure 500 {object} string "Internal server error"
 // @Router /novel/{novelSlug} [get]
 func (h *NovelHandler) GetNovel(c *gin.Context) {
-    slug := c.Param("novelSlug")
+	slug := c.Param("novelSlug")
 
-    var novel models.Novel
-    if err := h.DB.Preload("Tags").Preload("Genres").Where("slug = ?", slug).First(&novel).Error; err != nil {
-        if err == gorm.ErrRecordNotFound {
-            log.Println("Novel not found")
-            c.JSON(http.StatusNotFound, gin.H{"error": "Novel not found"})
-            return
-        }
-        log.Printf("Error fetching novel: %v", err)
-        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-        return
-    }
+	var novel models.Novel
+	if err := h.DB.Preload("Tags").Preload("Genres").Where("slug = ?", slug).First(&novel).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			log.Println("Novel not found")
+			c.JSON(http.StatusNotFound, gin.H{"error": "Novel not found"})
+			return
+		}
+		log.Printf("Error fetching novel: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-    var firstChapter models.Chapter
-    if err := h.DB.Where("novel_id = ?", novel.ID).Order("number ASC").First(&firstChapter).Error; err != nil {
-        if err == gorm.ErrRecordNotFound {
-            log.Println("No chapters found for the novel")
-            c.JSON(http.StatusOK, gin.H{
-                "id":          novel.ID,
-                "title":       novel.Title,
-                "raw_title":   novel.RawTitle,
-                "author":      novel.Author,
-                "description": novel.Description,
-                "thumbnail":   novel.Thumbnail,
-                "epub_url":    novel.EpubURL,
-                "updated_at":  novel.UpdatedAt,
-                "created_at":  novel.CreatedAt,
-                "tags":        novel.Tags,
-                "genres":      novel.Genres,
-                "first_chapter_slug": "",
-                "first_chapter_number": 0,
-            })
-            return
-        }
-        log.Printf("Error fetching first chapter: %v", err)
-        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-        return
-    }
+	var firstChapter models.Chapter
+	if err := h.DB.Where("novel_id = ?", novel.ID).Order("number ASC").First(&firstChapter).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			log.Println("No chapters found for the novel")
+			c.JSON(http.StatusOK, gin.H{
+				"id":                   novel.ID,
+				"title":                novel.Title,
+				"raw_title":            novel.RawTitle,
+				"author":               novel.Author,
+				"description":          novel.Description,
+				"thumbnail":            novel.Thumbnail,
+				"epub_url":             novel.EpubURL,
+				"updated_at":           novel.UpdatedAt,
+				"created_at":           novel.CreatedAt,
+				"tags":                 novel.Tags,
+				"genres":               novel.Genres,
+				"first_chapter_slug":   "",
+				"first_chapter_number": 0,
+			})
+			return
+		}
+		log.Printf("Error fetching first chapter: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-    c.JSON(http.StatusOK, gin.H{
-        "id":              novel.ID,
-        "title":           novel.Title,
-        "raw_title":       novel.RawTitle,
-        "author":          novel.Author,
-        "description":     novel.Description,
-        "thumbnail":       novel.Thumbnail,
-        "epub_url":        novel.EpubURL,
-        "updated_at":      novel.UpdatedAt,
-        "created_at":      novel.CreatedAt,
-        "tags":            novel.Tags,
-        "genres":          novel.Genres,
-        "first_chapter_slug": firstChapter.Slug,
-        "first_chapter_number": firstChapter.Number,
-    })
+	c.JSON(http.StatusOK, gin.H{
+		"id":                   novel.ID,
+		"title":                novel.Title,
+		"raw_title":            novel.RawTitle,
+		"author":               novel.Author,
+		"description":          novel.Description,
+		"thumbnail":            novel.Thumbnail,
+		"epub_url":             novel.EpubURL,
+		"updated_at":           novel.UpdatedAt,
+		"created_at":           novel.CreatedAt,
+		"tags":                 novel.Tags,
+		"genres":               novel.Genres,
+		"first_chapter_slug":   firstChapter.Slug,
+		"first_chapter_number": firstChapter.Number,
+	})
 }
 
 // GetNovels godoc

@@ -3,3 +3,6 @@
 ./temp
 .idea
 ./tmp
+
+translation_env
+tmp

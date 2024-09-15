@@ -90,7 +90,7 @@ func (w *Worker) processChapters(ctx context.Context) {
 				}
 
 				wg.Wait()
-			} else if strings.Contains(chapterJob.URL, "69shuba.cx") {
+			} else if strings.Contains(chapterJob.URL, "69shu.me") {
 				jobs, err := w.Redis.LRange(ctx, chapterQueueKey, 0, 1).Result()
 				if err != nil {
 					log.Printf("Error getting chapter jobs: %v", err)
@@ -194,6 +194,7 @@ func (w *Worker) processChapter(jobData string) error {
 		existingChapter.URL = chapter.URL
 
 		if utils.IsEnglishSource(chapterJob.URL) {
+			existingChapter.Slug = utils.Slugify(*existingChapter.TranslatedTitle)
 			existingChapter.TranslatedContent = chapter.TranslatedContent
 			existingChapter.TranslationStatus = "completed"
 		}

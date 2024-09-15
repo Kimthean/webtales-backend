@@ -119,7 +119,7 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 	case strings.Contains(url, "wuxiaspot.com"):
 		novel, err = c.crawlWuxiaspot(url)
 	case strings.Contains(url, "fanmtl.com"):
-		novel, err = c.crawlWuxiaspot(url)
+		novel, err = c.crawlWuxiabox(url)
 	case strings.Contains(url, "lightnovelworld.co"):
 		novel, err = c.crawlLightNovelWorld(url)
 	case strings.Contains(url, "69shu.me"):
@@ -711,7 +711,7 @@ func (c *Crawler) crawlChapterContent(pageURL string) (string, error) {
 		err = c.crawlWuxiaboxChapterContent(pageURL, &contentBuilder)
 	case strings.Contains(pageURL, "lightnovelworld.co"):
 		err = c.crawlLightNovelWorldChapterContent(pageURL, &contentBuilder)
-	case strings.Contains(pageURL, "69shuba.cx"):
+	case strings.Contains(pageURL, "69shu.me"):
 		err = c.crawl69shuChapterContent(pageURL, &contentBuilder)
 	default:
 		return "", fmt.Errorf("unsupported URL for chapter content: %s", pageURL)
