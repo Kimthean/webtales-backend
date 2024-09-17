@@ -31,6 +31,8 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 		novel, err = c.crawlLightNovelWorld(url)
 	case strings.Contains(url, "69shu.me"):
 		novel, err = c.crawl69Shu(url)
+	case strings.Contains(url, "1stkissnovel.org"):
+		novel = c.crawl1stKiss(url)
 	default:
 		return nil, fmt.Errorf("unsupported URL: %s", url)
 	}
@@ -370,4 +372,52 @@ func (c *Crawler) crawl69Shu(url string) (*models.Novel, error) {
 	}
 
 	return novel, nil
+}
+
+func (c *Crawler) crawl1stKiss(url string) *models.Novel {
+	novel := &models.Novel{URL: &url}
+	collector := c.newCollector()
+
+	collector.OnHTML(".container", func(e *colly.HTMLElement) {
+		e.ForEach(".post-title h1", func(_ int, el *colly.HTMLElement) {
+			title := strings.TrimSpace(el.Text)
+			novel.Title = &title
+			log.Printf("Title: %s", title)
+		})
+
+		e.ForEach(".summary_image img", func(_ int, el *colly.HTMLElement) {
+			thumbnail := el.Request.AbsoluteURL(el.Attr("src"))
+			novel.Thumbnail = &thumbnail
+			log.Printf("Thumbnail: %s", thumbnail)
+		})
+
+		e.ForEach(".post-content_item:contains('Author(s)') .summary-content", func(_ int, el *colly.HTMLElement) {
+			author := strings.TrimSpace(el.Text)
+			if author == "Updating" {
+				author = ""
+			}
+			novel.Author = &author
+			log.Printf("Author: %s", author)
+		})
+
+		e.ForEach(".post-content_item:contains('Alternative') .summary-content", func(_ int, el *colly.HTMLElement) {
+			rawTitle := strings.TrimSpace(el.Text)
+			novel.RawTitle = &rawTitle
+			log.Printf("Raw Title: %s", rawTitle)
+		})
+		e.ForEach(".description-summary .summary__content p", func(_ int, el *colly.HTMLElement) {
+			description := strings.TrimSpace(el.Text)
+			novel.Description = &description
+			log.Printf("Description: %s", description)
+		})
+
+	})
+
+	err := collector.Visit(url)
+	if err != nil {
+		log.Printf("Error visiting novel page: %s", err)
+		return nil
+	}
+
+	return novel
 }

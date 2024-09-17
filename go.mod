@@ -32,6 +32,11 @@ require (
 	github.com/saintfish/chardet v0.0.0-20120816061221-3af4cd4741ca // indirect
 	github.com/temoto/robotstxt v1.1.1 // indirect
 	github.com/vincent-petithory/dataurl v1.0.0 // indirect
+	github.com/ysmood/fetchup v0.2.3 // indirect
+	github.com/ysmood/goob v0.4.0 // indirect
+	github.com/ysmood/got v0.40.0 // indirect
+	github.com/ysmood/gson v0.7.3 // indirect
+	github.com/ysmood/leakless v0.9.0 // indirect
 	golang.org/x/tools v0.24.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	gopkg.in/sourcemap.v1 v1.0.5 // indirect
@@ -55,6 +60,7 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.22.0 // indirect
 	github.com/go-redis/redis/v8 v8.11.5
+	github.com/go-rod/rod v0.116.2
 	github.com/go-shiori/go-epub v1.2.1
 	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/gocolly/colly/v2 v2.1.0
