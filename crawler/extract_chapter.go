@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/gocolly/colly/v2"
 )
 
 func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
@@ -42,12 +40,29 @@ func (c *Crawler) extractChapters(url string) ([]models.Chapter, error) {
 
 func (c *Crawler) extract9999txtChapters(url string) ([]models.Chapter, error) {
 	var chapters []models.Chapter
-	collector := c.newCollector()
 	chapterCounter := 0
 
-	collector.OnHTML("div#list a[rel='chapter']", func(e *colly.HTMLElement) {
-		chapterURL := e.Request.AbsoluteURL(e.Attr("href"))
-		chapterTitle := e.DOM.Find("dd").Text()
+	page, err := c.newPage()
+	if err != nil {
+		return nil, fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
+
+	err = page.Navigate(url)
+	if err != nil {
+		return nil, fmt.Errorf("navigating to URL: %w", err)
+	}
+
+	page.MustWaitLoad()
+
+	chapterElements, err := page.Elements("div#list a[rel='chapter']")
+	if err != nil {
+		return nil, fmt.Errorf("finding chapter elements: %w", err)
+	}
+
+	for _, el := range chapterElements {
+		chapterURL := page.MustInfo().URL + *el.MustAttribute("href")
+		chapterTitle := el.MustElement("dd").MustText()
 
 		chapterCounter++
 
@@ -56,11 +71,6 @@ func (c *Crawler) extract9999txtChapters(url string) ([]models.Chapter, error) {
 			Title:  chapterTitle,
 			URL:    chapterURL,
 		})
-	})
-
-	err := collector.Visit(url)
-	if err != nil {
-		return nil, fmt.Errorf("visiting chapter list: %w", err)
 	}
 
 	return chapters, nil
@@ -72,56 +82,58 @@ func (c *Crawler) extractWuxiaboxChapters(url string) ([]models.Chapter, error) 
 	visitedPages := make(map[string]bool)
 	chapterCounter := 0
 
-	collector := c.newCollector()
+	for {
+		page, err := c.newPage()
+		if err != nil {
+			return nil, fmt.Errorf("creating new page: %w", err)
+		}
 
-	collector.OnRequest(func(r *colly.Request) {
-		time.Sleep(2 * time.Second)
-	})
+		err = page.Navigate(baseURL)
+		if err != nil {
+			page.Close()
+			return nil, fmt.Errorf("navigating to URL: %w", err)
+		}
 
-	collector.OnHTML("#chpagedlist", func(e *colly.HTMLElement) {
-		currentURL := e.Request.URL.String()
+		page.MustWaitLoad()
 
-		log.Printf("Extracting chapters from page: %s", currentURL)
+		log.Printf("Extracting chapters from page: %s", baseURL)
 
-		e.ForEach(".chapter-list li", func(_ int, el *colly.HTMLElement) {
+		chapterElements, err := page.Elements(".chapter-list li")
+		if err != nil {
+			page.Close()
+			return nil, fmt.Errorf("finding chapter elements: %w", err)
+		}
+
+		for _, el := range chapterElements {
 			chapterCounter++
-			chapterURL := el.ChildAttr("a", "href")
-			chapterTitle := el.ChildText(".chapter-title")
+
+			chapterURL := page.MustInfo().URL + *el.MustElement("a").MustAttribute("href")
+			chapterTitle := el.MustElement(".chapter-title").MustText()
 			chapters = append(chapters, models.Chapter{
 				Number:          chapterCounter,
 				TranslatedTitle: &chapterTitle,
-				URL:             e.Request.AbsoluteURL(chapterURL),
+				URL:             chapterURL,
 			})
-		})
-
-		// Check for next page
-		e.ForEach(".pagination li:not(.active) a[data-ajax='true']", func(_ int, el *colly.HTMLElement) {
-			nextPageURL := el.Attr("href")
-			if nextPageURL != "" {
-				absoluteNextPageURL := e.Request.AbsoluteURL(nextPageURL)
-				// Skip the first page, any already visited pages, and the "page=0" link
-				if absoluteNextPageURL != baseURL &&
-					!visitedPages[absoluteNextPageURL] &&
-					!strings.Contains(absoluteNextPageURL, "page=0") {
-					log.Printf("Found new page: %s. Queuing visit...", absoluteNextPageURL)
-					collector.Visit(absoluteNextPageURL)
-				}
-			}
-		})
-
-		if visitedPages[currentURL] {
-			log.Printf("Skipping already visited page: %s", currentURL)
-			return
 		}
-		visitedPages[currentURL] = true
-	})
 
-	visitedPages[baseURL] = true
+		nextPageElement, err := page.Element(".pagination li:not(.active) a[data-ajax='true']")
+		if err != nil || nextPageElement == nil {
+			page.Close()
+			break
+		}
 
-	err := collector.Visit(baseURL)
-	if err != nil {
-		log.Printf("Error visiting initial URL: %s", err)
-		return nil, fmt.Errorf("visiting initial URL: %w", err)
+		nextPageURL := *nextPageElement.MustAttribute("href")
+		absoluteNextPageURL := page.MustInfo().URL + nextPageURL
+
+		if absoluteNextPageURL == baseURL || visitedPages[absoluteNextPageURL] || strings.Contains(absoluteNextPageURL, "page=0") {
+			page.Close()
+			break
+		}
+
+		baseURL = absoluteNextPageURL
+		visitedPages[baseURL] = true
+		page.Close()
+		time.Sleep(2 * time.Second)
 	}
 
 	return chapters, nil
@@ -131,30 +143,47 @@ func (c *Crawler) extractLightNovelWorldChapters(url string) ([]models.Chapter, 
 	var chapters []models.Chapter
 	chapterCounter := 0
 
-	collector := c.newCollector()
-
-	collector.OnHTML(".chapter-list li", func(e *colly.HTMLElement) {
-		chapterURL := e.Request.AbsoluteURL(e.ChildAttr("a", "href"))
-		chapterTitle := strings.TrimSpace(e.ChildText("strong.chapter-title"))
-		chapterCounter++
-		chapters = append(chapters, models.Chapter{
-			Number:          chapterCounter,
-			TranslatedTitle: &chapterTitle,
-			URL:             chapterURL,
-		})
-	})
-
-	collector.OnHTML(".pagination li.PagedList-skipToNext a", func(e *colly.HTMLElement) {
-		nextPageURL := e.Attr("href")
-		if nextPageURL != "" {
-			fmt.Println("Found next page:", nextPageURL)
-			e.Request.Visit(nextPageURL)
+	for {
+		page, err := c.newPage()
+		if err != nil {
+			return nil, fmt.Errorf("creating new page: %w", err)
 		}
-	})
 
-	err := collector.Visit(url)
-	if err != nil {
-		return nil, fmt.Errorf("visiting chapter list: %w", err)
+		err = page.Navigate(url)
+		if err != nil {
+			page.Close()
+			return nil, fmt.Errorf("navigating to URL: %w", err)
+		}
+
+		page.MustWaitLoad()
+
+		chapterElements, err := page.Elements(".chapter-list li")
+		if err != nil {
+			page.Close()
+			return nil, fmt.Errorf("finding chapter elements: %w", err)
+		}
+
+		for _, el := range chapterElements {
+			chapterURL := page.MustInfo().URL + *el.MustElement("a").MustAttribute("href")
+			chapterTitle := strings.TrimSpace(el.MustElement("strong.chapter-title").MustText())
+			chapterCounter++
+			chapters = append(chapters, models.Chapter{
+				Number:          chapterCounter,
+				TranslatedTitle: &chapterTitle,
+				URL:             chapterURL,
+			})
+		}
+
+		nextPageElement, err := page.Element(".pagination li.PagedList-skipToNext a")
+		if err != nil || nextPageElement == nil {
+			page.Close()
+			break
+		}
+
+		url = *nextPageElement.MustAttribute("href")
+		fmt.Println("Found next page:", url)
+		page.Close()
+		time.Sleep(2 * time.Second)
 	}
 
 	return chapters, nil
@@ -163,34 +192,33 @@ func (c *Crawler) extractLightNovelWorldChapters(url string) ([]models.Chapter, 
 func (c *Crawler) extract69shuChapter(url string) ([]models.Chapter, error) {
 	var chapters []models.Chapter
 
-	collector := c.newCollector()
+	page, err := c.newPage()
+	if err != nil {
+		return nil, fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
 
-	collector.OnRequest(func(r *colly.Request) {
-		r.Headers.Set("Accept-Charset", "utf-8")
-	})
-	collector.OnResponse(func(r *colly.Response) {
+	err = page.Navigate(url)
+	if err != nil {
+		return nil, fmt.Errorf("navigating to URL: %w", err)
+	}
 
-		utf8Body, err := convertToUTF8(r.Body, r.Headers.Get("Content-Type"))
-		if err != nil {
-			log.Printf("Error converting response body to UTF-8: %s", err)
-			return
-		}
-		r.Body = utf8Body
-	})
+	page.MustWaitLoad()
 
-	collector.OnHTML("#catalog ul li a", func(a *colly.HTMLElement) {
-		chapterURL := a.Attr("href")
-		chapterTitle := a.Text
-		chapterNumberStr := a.DOM.Parent().AttrOr("data-num", "")
-		if chapterNumberStr == "" {
-			log.Printf("Skipping element without data-num attribute")
-			return
-		}
+	chapterElements, err := page.Elements("#catalog ul li a")
+	if err != nil {
+		return nil, fmt.Errorf("finding chapter elements: %w", err)
+	}
 
-		chapterNumber, err := strconv.Atoi(chapterNumberStr)
+	for _, el := range chapterElements {
+		chapterURL := page.MustInfo().URL + *el.MustAttribute("href")
+		chapterTitle := el.MustText()
+		chapterNumberStr := el.MustParent().MustAttribute("data-num")
+
+		chapterNumber, err := strconv.Atoi(*chapterNumberStr)
 		if err != nil {
 			log.Printf("Error parsing chapter number: %s", err)
-			return
+			continue
 		}
 
 		chapters = append(chapters, models.Chapter{
@@ -198,15 +226,49 @@ func (c *Crawler) extract69shuChapter(url string) ([]models.Chapter, error) {
 			Title:  chapterTitle,
 			Number: chapterNumber,
 		})
-	})
-	err := collector.Visit(url)
-	if err != nil {
-		return nil, fmt.Errorf("visiting chapter list: %w", err)
 	}
 
 	sort.Slice(chapters, func(i, j int) bool {
-		return chapters[i].Number > chapters[j].Number
+		return chapters[i].Number < chapters[j].Number
 	})
+
+	return chapters, nil
+}
+
+func (c *Crawler) extract1stKissChapters(url string) ([]models.Chapter, error) {
+	var chapters []models.Chapter
+
+	page, err := c.newPage()
+	if err != nil {
+		return nil, fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
+
+	err = page.Navigate(url)
+	if err != nil {
+		return nil, fmt.Errorf("navigating to URL: %w", err)
+	}
+
+	page.MustWaitLoad()
+
+	chapterElements, err := page.Elements("li.wp-manga-chapter")
+	if err != nil {
+		return nil, fmt.Errorf("finding chapter elements: %w", err)
+	}
+
+	for i, el := range chapterElements {
+		link, err := el.Element("a")
+		if err != nil {
+			continue
+		}
+		chapterURL := page.MustInfo().URL + *link.MustAttribute("href")
+		chapterTitle := strings.TrimSpace(link.MustText())
+		chapters = append(chapters, models.Chapter{
+			URL:    chapterURL,
+			Title:  chapterTitle,
+			Number: len(chapterElements) - i, // Reverse the order
+		})
+	}
 
 	return chapters, nil
 }

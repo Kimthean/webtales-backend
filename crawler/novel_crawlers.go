@@ -5,9 +5,6 @@ import (
 	"go-novel/models"
 	"log"
 	"strings"
-
-	"github.com/PuerkitoBio/goquery"
-	"github.com/gocolly/colly/v2"
 )
 
 func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
@@ -17,6 +14,8 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 	var err error
 
 	switch {
+	case strings.Contains(url, "webtalesmtl.xyz"):
+		err = c.testWebtales(url)
 	case strings.Contains(url, "9999txt.cc"):
 		novel, err = c.crawl9999txt(url)
 	case strings.Contains(url, "uukanshu.cc"):
@@ -32,7 +31,7 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 	case strings.Contains(url, "69shu.me"):
 		novel, err = c.crawl69Shu(url)
 	case strings.Contains(url, "1stkissnovel.org"):
-		novel = c.crawl1stKiss(url)
+		novel, err = c.crawl1stKiss(url)
 	default:
 		return nil, fmt.Errorf("unsupported URL: %s", url)
 	}
@@ -44,42 +43,158 @@ func (c *Crawler) CrawlNovel(url string) (*models.Novel, error) {
 	return novel, nil
 }
 
+func (c *Crawler) testWebtales(url string) error {
+	page, err := c.newPage()
+	if err != nil {
+		log.Println("Error ")
+	}
+	defer page.MustClose()
+
+	err = page.Navigate(url)
+	if err != nil {
+		log.Println("Error going to page")
+	}
+	log.Println("Waiting for page to load")
+	page.MustWaitLoad()
+
+	// Get the entire HTML content
+	html, err := page.HTML()
+	if err != nil {
+		return fmt.Errorf("failed to get HTML: %w", err)
+	}
+
+	// Log the entire HTML content
+	log.Println("Page HTML:")
+	fmt.Println(html)
+
+	return nil
+}
+
+func (c *Crawler) crawlWuxiabox(url string) (*models.Novel, error) {
+	novel := &models.Novel{URL: &url}
+
+	page, err := c.newPage()
+	if err != nil {
+		return nil, fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
+
+	err = page.Navigate(url)
+	if err != nil {
+		return nil, fmt.Errorf("navigating to URL: %w", err)
+	}
+
+	page.MustWaitLoad()
+
+	// Extract title
+	title, err := page.Element(".novel-title")
+	if err == nil {
+		titleText := title.MustText()
+		novel.Title = &titleText
+	}
+
+	// Extract alternative title
+	altTitle, err := page.Element(".alternative-title")
+	if err == nil {
+		altTitleText := altTitle.MustText()
+		novel.RawTitle = &altTitleText
+	}
+
+	// Extract author
+	author, err := page.Element(".author span[itemprop='author']")
+	if err == nil {
+		authorText := author.MustText()
+		novel.Author = &authorText
+	}
+
+	// Extract thumbnail
+	img, err := page.Element(".fixed-img img")
+	if err == nil {
+		imgSrc := img.MustAttribute("src")
+		if *imgSrc == "/static/picture/placeholder-158.jpg" {
+			imgSrc = img.MustAttribute("data-src")
+		}
+		imageURL := page.MustInfo().URL + *imgSrc
+		novel.Thumbnail = &imageURL
+	}
+
+	// Extract description
+	description, err := page.Element("#info .summary .content")
+	if err == nil {
+		var paragraphs []string
+		elements, err := description.Elements("p")
+		if err == nil {
+			for _, p := range elements {
+				paragraphs = append(paragraphs, strings.TrimSpace(p.MustText()))
+			}
+			detailedSummary := strings.Join(paragraphs, "\n\n")
+			novel.Description = &detailedSummary
+		}
+	}
+
+	// Extract chapters
+	chapters, err := c.extractChapters(url)
+	if err != nil {
+		log.Printf("Error extracting chapters: %s", err)
+	}
+	novel.Chapters = chapters
+
+	return novel, nil
+}
+
 func (c *Crawler) crawl9999txt(url string) (*models.Novel, error) {
 	novel := &models.Novel{URL: &url}
-	collector := c.newCollector()
 
-	collector.OnHTML("#info h1", func(e *colly.HTMLElement) {
-		title := e.Text
-		novel.Title = &title
-	})
+	page, err := c.newPage()
+	if err != nil {
+		return nil, fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
 
-	collector.OnHTML("#fmimg img", func(e *colly.HTMLElement) {
-		imageURL := e.Attr("data-original")
-		novel.Thumbnail = &imageURL
-	})
+	err = page.Navigate(url)
+	if err != nil {
+		return nil, fmt.Errorf("navigating to URL: %w", err)
+	}
 
-	collector.OnHTML("#info > p:first-of-type a", func(e *colly.HTMLElement) {
-		author := e.Text
-		novel.Author = &author
-	})
+	page.MustWaitLoad()
 
-	collector.OnHTML("#intro", func(e *colly.HTMLElement) {
-		introDescription := e.Text
-		novel.Description = &introDescription
-	})
+	// Extract title
+	title, err := page.Element("#info h1")
+	if err == nil {
+		titleText := title.MustText()
+		novel.Title = &titleText
+	}
 
-	collector.OnHTML(".readbtn .chapterlist", func(e *colly.HTMLElement) {
-		chapterListURL := e.Request.AbsoluteURL(e.Attr("href"))
+	// Extract thumbnail
+	img, err := page.Element("#fmimg img")
+	if err == nil {
+		imageURL := img.MustAttribute("data-original")
+		novel.Thumbnail = imageURL
+	}
+
+	// Extract author
+	author, err := page.Element("#info > p:first-of-type a")
+	if err == nil {
+		authorText := author.MustText()
+		novel.Author = &authorText
+	}
+
+	// Extract description
+	description, err := page.Element("#intro")
+	if err == nil {
+		descriptionText := description.MustText()
+		novel.Description = &descriptionText
+	}
+
+	// Extract chapters
+	chapterListLink, err := page.Element(".readbtn .chapterlist")
+	if err == nil {
+		chapterListURL := page.MustInfo().URL + *chapterListLink.MustAttribute("href")
 		chapters, err := c.extractChapters(chapterListURL)
 		if err != nil {
 			log.Printf("Error extracting chapters: %s", err)
 		}
 		novel.Chapters = chapters
-	})
-
-	err := collector.Visit(url)
-	if err != nil {
-		return nil, fmt.Errorf("visiting novel page: %w", err)
 	}
 
 	return novel, nil
@@ -87,110 +202,61 @@ func (c *Crawler) crawl9999txt(url string) (*models.Novel, error) {
 
 func (c *Crawler) crawlUukanshu(url string) (*models.Novel, error) {
 	novel := &models.Novel{URL: &url}
-	collector := c.newCollector()
 
-	collector.OnHTML(".thumbnail", func(e *colly.HTMLElement) {
-		imageURL := e.Request.AbsoluteURL(e.Attr("src"))
+	page, err := c.newPage()
+	if err != nil {
+		return nil, fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
+
+	err = page.Navigate(url)
+	if err != nil {
+		return nil, fmt.Errorf("navigating to URL: %w", err)
+	}
+
+	page.MustWaitLoad()
+
+	// Extract thumbnail
+	img, err := page.Element(".thumbnail")
+	if err == nil {
+		imageURL := page.MustInfo().URL + *img.MustAttribute("src")
 		novel.Thumbnail = &imageURL
-	})
+	}
 
-	collector.OnHTML(".booktitle", func(e *colly.HTMLElement) {
-		bookTitle := e.Text
-		novel.Title = &bookTitle
-	})
+	// Extract title
+	title, err := page.Element(".booktitle")
+	if err == nil {
+		titleText := title.MustText()
+		novel.Title = &titleText
+	}
 
-	collector.OnHTML(".bookintro", func(e *colly.HTMLElement) {
-		bookIntro := e.Text
-		novel.Description = &bookIntro
-	})
+	// Extract description
+	description, err := page.Element(".bookintro")
+	if err == nil {
+		descriptionText := description.MustText()
+		novel.Description = &descriptionText
+	}
 
-	collector.OnHTML(".booktag", func(e *colly.HTMLElement) {
-		authorWithPrefix := e.ChildText("a.red")
-		author := strings.Replace(authorWithPrefix, "作者：", "", -1)
-		novel.Author = &author
-	})
+	// Extract author
+	author, err := page.Element(".booktag a.red")
+	if err == nil {
+		authorText := strings.Replace(author.MustText(), "作者：", "", -1)
+		novel.Author = &authorText
+	}
 
+	// Extract chapters
 	var chapters []models.Chapter
-	chapterCounter := 0
-	collector.OnHTML(".book.chapterlist dd a", func(e *colly.HTMLElement) {
-		chapterURL := e.Request.AbsoluteURL(e.Attr("href"))
-		chapterTitle := e.Text
-
-		chapterCounter++
-
-		chapters = append(chapters, models.Chapter{
-			URL:    chapterURL,
-			Title:  chapterTitle,
-			Number: chapterCounter,
-		})
-	})
-
-	err := collector.Visit(url)
-	if err != nil {
-		return nil, fmt.Errorf("visiting novel page: %w", err)
-	}
-	novel.Chapters = chapters
-
-	return novel, nil
-}
-
-func (c *Crawler) crawlWuxiabox(url string) (*models.Novel, error) {
-	novel := &models.Novel{URL: &url}
-	collector := c.newCollector()
-
-	collector.OnHTML(".novel-header", func(e *colly.HTMLElement) {
-		title := e.ChildText(".novel-title")
-		novel.Title = &title
-
-		altTitle := e.ChildText(".alternative-title")
-		novel.RawTitle = &altTitle
-
-		author := e.ChildText(".author span[itemprop='author']")
-		novel.Author = &author
-
-		imgSrc := e.ChildAttr(".fixed-img img", "src")
-		if imgSrc == "/static/picture/placeholder-158.jpg" {
-			imgSrc = e.ChildAttr(".fixed-img img", "data-src")
-		}
-		imageURL := e.Request.AbsoluteURL(imgSrc)
-		novel.Thumbnail = &imageURL
-	})
-
-	collector.OnHTML("#info", func(e *colly.HTMLElement) {
-		var paragraphs []string
-
-		paragraphElements := e.DOM.Find(".summary .content p")
-		if paragraphElements.Length() > 1 {
-			paragraphElements.Each(func(_ int, s *goquery.Selection) {
-				trimmedText := strings.TrimSpace(s.Text())
-				if trimmedText != "" {
-					paragraphs = append(paragraphs, trimmedText)
-				}
+	chapterElements, err := page.Elements(".book.chapterlist dd a")
+	if err == nil {
+		for i, el := range chapterElements {
+			chapterURL := page.MustInfo().URL + *el.MustAttribute("href")
+			chapterTitle := el.MustText()
+			chapters = append(chapters, models.Chapter{
+				URL:    chapterURL,
+				Title:  chapterTitle,
+				Number: i + 1,
 			})
-		} else {
-			content := e.ChildText(".summary .content p")
-			content = strings.ReplaceAll(content, "<br>", "\n")
-			content = strings.ReplaceAll(content, "<br/>", "\n")
-			for _, paragraph := range strings.Split(content, "\n") {
-				trimmedParagraph := strings.TrimSpace(paragraph)
-				if trimmedParagraph != "" {
-					paragraphs = append(paragraphs, trimmedParagraph)
-				}
-			}
 		}
-
-		detailedSummary := strings.Join(paragraphs, "\n\n")
-		novel.Description = &detailedSummary
-	})
-
-	err := collector.Visit(url)
-	if err != nil {
-		return nil, fmt.Errorf("visiting novel page: %w", err)
-	}
-
-	chapters, err := c.extractChapters(url)
-	if err != nil {
-		log.Printf("Error extracting chapters: %s", err)
 	}
 	novel.Chapters = chapters
 
@@ -198,60 +264,134 @@ func (c *Crawler) crawlWuxiabox(url string) (*models.Novel, error) {
 }
 
 func (c *Crawler) crawlWuxiaspot(url string) (*models.Novel, error) {
+	// This function can be very similar to crawlWuxiabox
+	// Just adjust the selectors if they're different
+	return c.crawlWuxiabox(url)
+}
+
+func (c *Crawler) crawlLightNovelWorld(url string) (*models.Novel, error) {
 	novel := &models.Novel{URL: &url}
-	collector := c.newCollector()
 
-	collector.OnHTML(".novel-header", func(e *colly.HTMLElement) {
-		title := e.ChildText(".novel-title")
-		novel.Title = &title
-
-		altTitle := e.ChildText(".alternative-title")
-		novel.RawTitle = &altTitle
-
-		author := e.ChildText("span[itemprop='author'] a")
-		novel.Author = &author
-
-		imgSrc := e.ChildAttr(".fixed-img img", "src")
-		if imgSrc == "/static/picture/placeholder-158.jpg" {
-			imgSrc = e.ChildAttr(".fixed-img img", "data-src")
-		}
-		imageURL := e.Request.AbsoluteURL(imgSrc)
-		novel.Thumbnail = &imageURL
-	})
-
-	collector.OnHTML("#info", func(e *colly.HTMLElement) {
-		var paragraphs []string
-
-		paragraphElements := e.DOM.Find(".summary .content p")
-		if paragraphElements.Length() > 1 {
-			paragraphElements.Each(func(_ int, s *goquery.Selection) {
-				trimmedText := strings.TrimSpace(s.Text())
-				if trimmedText != "" {
-					paragraphs = append(paragraphs, trimmedText)
-				}
-			})
-		} else {
-			content := e.ChildText(".summary .content p")
-			content = strings.ReplaceAll(content, "<br>", "\n\n")
-			content = strings.ReplaceAll(content, "<br/>", "\n\n")
-			for _, paragraph := range strings.Split(content, "\n\n") {
-				trimmedParagraph := strings.TrimSpace(paragraph)
-				if trimmedParagraph != "" {
-					paragraphs = append(paragraphs, trimmedParagraph)
-				}
-			}
-		}
-
-		detailedSummary := strings.Join(paragraphs, "\n\n\n")
-		novel.Description = &detailedSummary
-	})
-
-	err := collector.Visit(url)
+	page, err := c.newPage()
 	if err != nil {
-		return nil, fmt.Errorf("visiting novel page: %w", err)
+		return nil, fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
+
+	err = page.Navigate(url)
+	if err != nil {
+		return nil, fmt.Errorf("navigating to URL: %w", err)
 	}
 
-	chapters, err := c.extractChapters(url)
+	page.MustWaitLoad()
+
+	// Extract title
+	title, err := page.Element(".novel-title")
+	if err == nil {
+		titleText := strings.TrimSpace(title.MustText())
+		novel.Title = &titleText
+	}
+
+	// Extract alternative title
+	altTitle, err := page.Element(".alternative-title")
+	if err == nil {
+		altTitleText := strings.TrimSpace(altTitle.MustText())
+		novel.RawTitle = &altTitleText
+	}
+
+	// Extract author
+	author, err := page.Element(".property-item span[itemprop='author']")
+	if err == nil {
+		authorText := strings.TrimSpace(author.MustText())
+		novel.Author = &authorText
+	}
+
+	// Extract thumbnail
+	img, err := page.Element(".fixed-img img")
+	if err == nil {
+		imageURL := img.MustAttribute("src")
+		if strings.HasPrefix(*imageURL, "data:image") {
+			imageURL = img.MustAttribute("data-src")
+		}
+		novel.Thumbnail = imageURL
+	}
+
+	// Extract description
+	description, err := page.Element(".summary .content")
+	if err == nil {
+		var paragraphs []string
+		elements, err := description.Elements("p")
+		if err == nil {
+			for _, p := range elements {
+				paragraphs = append(paragraphs, p.MustText())
+			}
+			detailedSummary := strings.Join(paragraphs, "\n\n\n")
+			novel.Description = &detailedSummary
+		}
+	}
+
+	// Extract chapters
+	chapterListLink, err := page.Element("a.chapter-latest-container")
+	if err == nil {
+		chapterListURL := page.MustInfo().URL + *chapterListLink.MustAttribute("href")
+		chapters, err := c.extractChapters(chapterListURL)
+		if err != nil {
+			log.Printf("Error extracting chapters: %s", err)
+		}
+		novel.Chapters = chapters
+	}
+
+	return novel, nil
+}
+
+func (c *Crawler) crawl69Shu(url string) (*models.Novel, error) {
+	novel := &models.Novel{URL: &url}
+
+	page, err := c.newPage()
+	if err != nil {
+		return nil, fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
+
+	err = page.Navigate(url)
+	if err != nil {
+		return nil, fmt.Errorf("navigating to URL: %w", err)
+	}
+
+	page.MustWaitLoad()
+
+	// Extract title and author
+	bookbox, err := page.Element(".bookbox")
+	if err == nil {
+		title, err := bookbox.Element("h1 a")
+		if err == nil {
+			titleText := title.MustText()
+			novel.Title = &titleText
+		}
+
+		author, err := bookbox.Element("p:contains('作者：') a")
+		if err == nil {
+			authorText := author.MustText()
+			novel.Author = &authorText
+		}
+	}
+
+	// Extract thumbnail
+	img, err := page.Element(".bookimg img")
+	if err == nil {
+		imageURL := page.MustInfo().URL + *img.MustAttribute("src")
+		novel.Thumbnail = &imageURL
+	}
+
+	// Extract description
+	description, err := page.Element(".bookintro")
+	if err == nil {
+		descriptionText := description.MustText()
+		novel.Description = &descriptionText
+	}
+
+	// Extract chapters
+	chapters, err := c.extract69shuChapter(url)
 	if err != nil {
 		log.Printf("Error extracting chapters: %s", err)
 	}
@@ -260,164 +400,60 @@ func (c *Crawler) crawlWuxiaspot(url string) (*models.Novel, error) {
 	return novel, nil
 }
 
-func (c *Crawler) crawlLightNovelWorld(url string) (*models.Novel, error) {
+func (c *Crawler) crawl1stKiss(url string) (*models.Novel, error) {
 	novel := &models.Novel{URL: &url}
-	collector := c.newCollector()
 
-	collector.OnHTML(".novel-title", func(e *colly.HTMLElement) {
-		title := strings.TrimSpace(e.Text)
-		novel.Title = &title
-	})
+	page, err := c.newPage()
+	if err != nil {
+		return nil, fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
 
-	collector.OnHTML(".alternative-title", func(e *colly.HTMLElement) {
-		altTitle := strings.TrimSpace(e.Text)
-		novel.RawTitle = &altTitle
-	})
+	err = page.Navigate(url)
+	if err != nil {
+		return nil, fmt.Errorf("navigating to URL: %w", err)
+	}
 
-	collector.OnHTML(".property-item span[itemprop='author']", func(e *colly.HTMLElement) {
-		author := strings.TrimSpace(e.Text)
-		novel.Author = &author
-	})
+	page.MustWaitLoad()
 
-	collector.OnHTML(".fixed-img img", func(e *colly.HTMLElement) {
-		coverImageURL := e.Request.AbsoluteURL(e.Attr("src"))
-		if strings.HasPrefix(coverImageURL, "data:image") {
-			coverImageURL = e.Attr("data-src")
-		}
-		novel.Thumbnail = &coverImageURL
-	})
+	// Extract title
+	title, err := page.Element("h1.entry-title")
+	if err == nil {
+		titleText := strings.TrimSpace(title.MustText())
+		novel.Title = &titleText
+	}
 
-	collector.OnHTML(".summary .content", func(e *colly.HTMLElement) {
-		description := ""
-		e.ForEach("p", func(_ int, el *colly.HTMLElement) {
-			description += el.Text + "\n\n\n"
-		})
-		novel.Description = &description
-	})
+	// Extract author
+	author, err := page.Element(".author-content a")
+	if err == nil {
+		authorText := strings.TrimSpace(author.MustText())
+		novel.Author = &authorText
+	}
 
-	collector.OnHTML("a.chapter-latest-container", func(e *colly.HTMLElement) {
-		chapterListURL := e.Request.AbsoluteURL(e.Attr("href"))
-		chapters, err := c.extractChapters(chapterListURL)
+	// Extract thumbnail
+	img, err := page.Element(".summary_image img")
+	if err == nil {
+		imageURL := img.MustAttribute("data-src")
+		novel.Thumbnail = imageURL
+	}
+
+	// Extract description
+	description, err := page.Element(".summary__content")
+	if err == nil {
+		descriptionText := strings.TrimSpace(description.MustText())
+		novel.Description = &descriptionText
+	}
+
+	// Extract chapters
+	chapterListLink, err := page.Element("li.wp-manga-chapter a")
+	if err == nil {
+		chapterListURL := *chapterListLink.MustAttribute("href")
+		chapters, err := c.extract1stKissChapters(chapterListURL)
 		if err != nil {
 			log.Printf("Error extracting chapters: %s", err)
 		}
 		novel.Chapters = chapters
-	})
-
-	err := collector.Visit(url)
-	if err != nil {
-		return nil, fmt.Errorf("visiting novel page: %w", err)
 	}
 
 	return novel, nil
-}
-
-func (c *Crawler) crawl69Shu(url string) (*models.Novel, error) {
-	novel := &models.Novel{URL: &url}
-	collector := c.newCollector()
-
-	collector.OnRequest(func(r *colly.Request) {
-		r.Headers.Set("Accept-Charset", "utf-8")
-	})
-	collector.OnResponse(func(r *colly.Response) {
-		utf8Body, err := convertToUTF8(r.Body, r.Headers.Get("Content-Type"))
-		if err != nil {
-			log.Printf("Error converting response body to UTF-8: %s", err)
-			return
-		}
-		r.Body = utf8Body
-	})
-
-	collector.OnHTML(".bookbox", func(e *colly.HTMLElement) {
-		title := e.ChildText("h1 a")
-		novel.Title = &title
-		log.Printf("Title: %s", title)
-
-		author := e.ChildText("p:contains('作者：') a")
-		novel.Author = &author
-		log.Printf("Author: %s", author)
-
-		coverImageURL := e.Request.AbsoluteURL(e.ChildAttr(".bookimg2 img", "src"))
-		novel.Thumbnail = &coverImageURL
-	})
-	collector.OnHTML(".jianjie-popup .content", func(e *colly.HTMLElement) {
-		description := ""
-
-		e.ForEach("p", func(_ int, el *colly.HTMLElement) {
-			description += el.Text + "\n\n\n"
-		})
-
-		if description == "" {
-			e.ForEach("p", func(_ int, el *colly.HTMLElement) {
-				description = strings.ReplaceAll(el.Text, "<br>", "\n\n\n")
-			})
-		}
-
-		novel.Description = &description
-		log.Printf("Description: %s", description)
-	})
-
-	collector.OnHTML(".addbtn a.btn[href*='/book/']", func(e *colly.HTMLElement) {
-		chapterPageURL := e.Request.AbsoluteURL(e.Attr("href"))
-		chapters, err := c.extractChapters(chapterPageURL)
-		if err != nil {
-			log.Printf("Error extracting chapters: %s", err)
-		}
-		novel.Chapters = chapters
-	})
-
-	err := collector.Visit(url)
-	if err != nil {
-		return nil, fmt.Errorf("visiting novel page: %w", err)
-	}
-
-	return novel, nil
-}
-
-func (c *Crawler) crawl1stKiss(url string) *models.Novel {
-	novel := &models.Novel{URL: &url}
-	collector := c.newCollector()
-
-	collector.OnHTML(".container", func(e *colly.HTMLElement) {
-		e.ForEach(".post-title h1", func(_ int, el *colly.HTMLElement) {
-			title := strings.TrimSpace(el.Text)
-			novel.Title = &title
-			log.Printf("Title: %s", title)
-		})
-
-		e.ForEach(".summary_image img", func(_ int, el *colly.HTMLElement) {
-			thumbnail := el.Request.AbsoluteURL(el.Attr("src"))
-			novel.Thumbnail = &thumbnail
-			log.Printf("Thumbnail: %s", thumbnail)
-		})
-
-		e.ForEach(".post-content_item:contains('Author(s)') .summary-content", func(_ int, el *colly.HTMLElement) {
-			author := strings.TrimSpace(el.Text)
-			if author == "Updating" {
-				author = ""
-			}
-			novel.Author = &author
-			log.Printf("Author: %s", author)
-		})
-
-		e.ForEach(".post-content_item:contains('Alternative') .summary-content", func(_ int, el *colly.HTMLElement) {
-			rawTitle := strings.TrimSpace(el.Text)
-			novel.RawTitle = &rawTitle
-			log.Printf("Raw Title: %s", rawTitle)
-		})
-		e.ForEach(".description-summary .summary__content p", func(_ int, el *colly.HTMLElement) {
-			description := strings.TrimSpace(el.Text)
-			novel.Description = &description
-			log.Printf("Description: %s", description)
-		})
-
-	})
-
-	err := collector.Visit(url)
-	if err != nil {
-		log.Printf("Error visiting novel page: %s", err)
-		return nil
-	}
-
-	return novel
 }

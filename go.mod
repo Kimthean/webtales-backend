@@ -61,6 +61,7 @@ require (
 	github.com/go-playground/validator/v10 v10.22.0 // indirect
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-rod/rod v0.116.2
+	github.com/go-rod/stealth v0.4.9
 	github.com/go-shiori/go-epub v1.2.1
 	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/gocolly/colly/v2 v2.1.0

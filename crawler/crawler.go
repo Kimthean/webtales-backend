@@ -1,19 +1,20 @@
 package crawler
 
 import (
-	"bytes"
-	"crypto/tls"
-	"io"
-	"net/http"
+	"fmt"
+	"log"
+	"os"
 	"time"
 
-	"github.com/gocolly/colly/v2"
+	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/proto"
+	"github.com/go-rod/stealth"
 	"golang.org/x/exp/rand"
-	"golang.org/x/net/html/charset"
 )
 
 type Crawler struct {
 	userAgents []string
+	browser    *rod.Browser
 }
 
 func NewCrawler() *Crawler {
@@ -31,74 +32,77 @@ func NewCrawler() *Crawler {
 			"Mozilla/5.0 (Linux; Android 12; moto g stylus 5G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36v",
 			"Mozilla/5.0 (Linux; Android 12; Redmi Note 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
 		},
+		browser: nil,
 	}
 }
 
-func (c *Crawler) newCollector() *colly.Collector {
-	collector := colly.NewCollector(
-		colly.UserAgent(c.randomUserAgent()),
-	)
-
-	collector.SetRequestTimeout(30 * time.Second)
-	c.setLimitRules(collector)
-	c.configureTransport(collector)
-	c.setRequestHeaders(collector)
-
-	return collector
-}
-
-func (c *Crawler) setLimitRules(collector *colly.Collector) {
-	collector.Limit(&colly.LimitRule{
-		DomainGlob:  "*",
-		Parallelism: 20,
-		RandomDelay: 1 * time.Second,
-	})
-	collector.Limit(&colly.LimitRule{
-		DomainGlob:  "*wuxiabox.com*",
-		RandomDelay: 2 * time.Second,
-	})
-	collector.Limit(&colly.LimitRule{
-		DomainGlob:  "*wuxiaspot.com*",
-		RandomDelay: 2 * time.Second,
-	})
-	collector.Limit(&colly.LimitRule{
-		DomainGlob:  "*fanmtl.com*",
-		RandomDelay: 1 * time.Second,
-	})
-	collector.Limit(&colly.LimitRule{
-		DomainGlob:  "*lightnovelworld.co*",
-		RandomDelay: 4 * time.Second,
-	})
-	collector.Limit(&colly.LimitRule{
-		DomainGlob:  "*69shu.me*",
-		Parallelism: 2,
-		RandomDelay: 2 * time.Second,
-	})
-}
-
-func (c *Crawler) configureTransport(collector *colly.Collector) {
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+func (c *Crawler) initBrowser() error {
+	if c.browser != nil {
+		return nil
 	}
-	collector.WithTransport(transport)
+
+	log.Println("Initializing browser")
+
+	chromeURL := os.Getenv("CHROME_URL")
+	if chromeURL == "" {
+		chromeURL = "ws://chrome:3000" // Default URL if not set in environment
+	}
+
+	browser := rod.New().ControlURL(chromeURL)
+	log.Println("Connecting to browser")
+	err := browser.Connect()
+	if err != nil {
+		return fmt.Errorf("connecting to browser: %w", err)
+	}
+	log.Println("Connected to browser")
+
+	c.browser = stealth.MustPage(browser).Browser()
+	log.Println("Browser initialization complete")
+	return nil
 }
 
-func (c *Crawler) setRequestHeaders(collector *colly.Collector) {
-	collector.OnRequest(func(r *colly.Request) {
-		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-		r.Headers.Set("Accept-Language", "en-US,en;q=0.5")
-		r.Headers.Set("Referer", "https://www.google.com/")
+func (c *Crawler) CloseBrowser() {
+	if c.browser != nil {
+		c.browser.MustClose()
+		c.browser = nil
+	}
+}
+
+func (c *Crawler) newPage() (*rod.Page, error) {
+	err := c.initBrowser()
+	if err != nil {
+		return nil, fmt.Errorf("initializing browser: %w", err)
+	}
+
+	page := stealth.MustPage(c.browser)
+
+	userAgent := c.randomUserAgent()
+	err = page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
+		UserAgent: userAgent,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("setting user agent: %w", err)
+	}
+
+	headers := []string{
+		"Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+		"Accept-Language", "en-US,en;q=0.5",
+		"Referer", "https://www.google.com/",
+	}
+	if len(headers)%2 == 0 {
+		_, err = page.SetExtraHeaders(headers)
+		if err != nil {
+			return nil, fmt.Errorf("setting extra headers: %w", err)
+		}
+	} else {
+		log.Println("Warning: Odd number of header parameters, skipping SetExtraHeaders")
+	}
+
+	page.Timeout(30 * time.Second)
+
+	return page, nil
 }
 
 func (c *Crawler) randomUserAgent() string {
 	return c.userAgents[rand.Intn(len(c.userAgents))]
-}
-
-func convertToUTF8(body []byte, contentType string) ([]byte, error) {
-	reader, err := charset.NewReader(bytes.NewReader(body), contentType)
-	if err != nil {
-		return nil, err
-	}
-	return io.ReadAll(reader)
 }

@@ -1,17 +1,11 @@
-// File: chapter_crawlers.go
-
 package crawler
 
 import (
 	"fmt"
 	"go-novel/models"
 	"go-novel/utils"
-	"log"
 	"strings"
 	"time"
-
-	"github.com/PuerkitoBio/goquery"
-	"github.com/gocolly/colly/v2"
 )
 
 func (c *Crawler) CrawlChapter(chapterURL string, chapterTitle string, chapterNumber int) (*models.Chapter, error) {
@@ -66,48 +60,54 @@ func (c *Crawler) crawlChapterContent(pageURL string) (string, error) {
 }
 
 func (c *Crawler) crawl9999txtChapterContent(pageURL string, contentBuilder *strings.Builder) error {
-	collector := c.newCollector()
-	var paragraphs []string
-	var nextPageURL string
-	var nextPageText string
-
-	collector.OnHTML("#content", func(e *colly.HTMLElement) {
-		e.ForEach("p", func(_ int, el *colly.HTMLElement) {
-			text := strings.TrimSpace(el.Text)
-			if text != "" {
-				paragraphs = append(paragraphs, text)
-			}
-		})
-	})
-
-	collector.OnHTML(".bottem2 a[rel='next']", func(e *colly.HTMLElement) {
-		nextPageURL = e.Request.AbsoluteURL(e.Attr("href"))
-		nextPageText = strings.TrimSpace(e.Text)
-	})
-
-	err := collector.Visit(pageURL)
+	page, err := c.newPage()
 	if err != nil {
-		return fmt.Errorf("visiting chapter page: %w", err)
+		return fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
+
+	err = page.Navigate(pageURL)
+	if err != nil {
+		return fmt.Errorf("navigating to URL: %w", err)
 	}
 
-	for i, text := range paragraphs {
-		trimmedText := strings.TrimSpace(text)
-		normalizedText := strings.ReplaceAll(trimmedText, " ", "")
-		normalizedText = strings.ReplaceAll(normalizedText, "，", "")
-		normalizedText = strings.ReplaceAll(normalizedText, "。", "")
-		if i == len(paragraphs)-1 && normalizedText == "本章未完点击下一页继续阅读" {
-			continue
-		}
-		if i > 0 {
-			contentBuilder.WriteString("\n\n")
-		}
-		contentBuilder.WriteString(text)
+	page.MustWaitLoad()
+
+	contentElement, err := page.Element("#content")
+	if err != nil {
+		return fmt.Errorf("finding content element: %w", err)
 	}
 
-	if nextPageURL != "" && nextPageURL != pageURL && nextPageText != "下一章" && !strings.Contains(nextPageURL, "javascript:void(0);") {
-		err = c.crawl9999txtChapterContent(nextPageURL, contentBuilder)
-		if err != nil {
-			return err
+	paragraphs, err := contentElement.Elements("p")
+	if err != nil {
+		return fmt.Errorf("finding paragraph elements: %w", err)
+	}
+
+	for i, p := range paragraphs {
+		text := strings.TrimSpace(p.MustText())
+		if text != "" {
+			normalizedText := strings.ReplaceAll(text, " ", "")
+			normalizedText = strings.ReplaceAll(normalizedText, "，", "")
+			normalizedText = strings.ReplaceAll(normalizedText, "。", "")
+			if i == len(paragraphs)-1 && normalizedText == "本章未完点击下一页继续阅读" {
+				continue
+			}
+			if i > 0 {
+				contentBuilder.WriteString("\n\n")
+			}
+			contentBuilder.WriteString(text)
+		}
+	}
+
+	nextPageElement, err := page.Element(".bottem2 a[rel='next']")
+	if err == nil && nextPageElement != nil {
+		nextPageURL := page.MustInfo().URL + *nextPageElement.MustAttribute("href")
+		nextPageText := strings.TrimSpace(nextPageElement.MustText())
+		if nextPageURL != pageURL && nextPageText != "下一章" && !strings.Contains(nextPageURL, "javascript:void(0);") {
+			err = c.crawl9999txtChapterContent(nextPageURL, contentBuilder)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -115,136 +115,140 @@ func (c *Crawler) crawl9999txtChapterContent(pageURL string, contentBuilder *str
 }
 
 func (c *Crawler) crawlUukanshuChapterContent(pageURL string, contentBuilder *strings.Builder) error {
-	collector := c.newCollector()
-
-	collector.OnHTML(".book.read", func(e *colly.HTMLElement) {
-		contentSelection := e.DOM.Find("p.readcotent")
-
-		contentHtml, err := contentSelection.Html()
-		if err != nil {
-			log.Printf("Failed to extract HTML content: %v", err)
-			return
-		}
-		contentWithLineBreaks := strings.ReplaceAll(contentHtml, "<br/>", "\n")
-
-		lines := strings.Split(contentWithLineBreaks, "\n")
-		for i, line := range lines {
-			line = strings.ReplaceAll(line, "\u00A0", " ")
-			line = strings.TrimSpace(line)
-			lines[i] = line
-		}
-		sanitizedContent := strings.Join(lines, "\n")
-
-		contentBuilder.WriteString(sanitizedContent)
-	})
-
-	err := collector.Visit(pageURL)
+	page, err := c.newPage()
 	if err != nil {
-		return fmt.Errorf("visiting chapter page: %w", err)
+		return fmt.Errorf("creating new page: %w", err)
 	}
+	defer page.Close()
+
+	err = page.Navigate(pageURL)
+	if err != nil {
+		return fmt.Errorf("navigating to URL: %w", err)
+	}
+
+	page.MustWaitLoad()
+
+	contentElement, err := page.Element(".book.read p.readcotent")
+	if err != nil {
+		return fmt.Errorf("finding content element: %w", err)
+	}
+
+	contentHtml, err := contentElement.HTML()
+	if err != nil {
+		return fmt.Errorf("extracting HTML content: %w", err)
+	}
+
+	contentWithLineBreaks := strings.ReplaceAll(contentHtml, "<br/>", "\n")
+	lines := strings.Split(contentWithLineBreaks, "\n")
+	for i, line := range lines {
+		line = strings.ReplaceAll(line, "\u00A0", " ")
+		line = strings.TrimSpace(line)
+		lines[i] = line
+	}
+	sanitizedContent := strings.Join(lines, "\n")
+
+	contentBuilder.WriteString(sanitizedContent)
 
 	return nil
 }
 
 func (c *Crawler) crawlWuxiaboxChapterContent(pageURL string, contentBuilder *strings.Builder) error {
-	collector := c.newCollector()
-
-	collector.OnRequest(func(r *colly.Request) {
-		time.Sleep(4 * time.Second)
-	})
-
-	collector.OnHTML(".chapter-content", func(e *colly.HTMLElement) {
-		processContent := func(text string) {
-			text = strings.TrimSpace(text)
-			if text != "" {
-				contentBuilder.WriteString(text + "\n\n")
-			}
-		}
-
-		e.ForEach("p", func(_ int, el *colly.HTMLElement) {
-			processContent(el.Text)
-		})
-
-		e.DOM.Contents().Each(func(_ int, s *goquery.Selection) {
-			if goquery.NodeName(s) == "#text" {
-				processContent(s.Text())
-			}
-		})
-
-		content := contentBuilder.String()
-		content = strings.ReplaceAll(content, "&ZeroWidthSpace;", "")
-
-		contentBuilder.Reset()
-		contentBuilder.WriteString(content)
-	})
-
-	err := collector.Visit(pageURL)
+	page, err := c.newPage()
 	if err != nil {
-		return fmt.Errorf("visiting chapter page: %w", err)
+		return fmt.Errorf("creating new page: %w", err)
 	}
+	defer page.Close()
+
+	time.Sleep(4 * time.Second)
+
+	err = page.Navigate(pageURL)
+	if err != nil {
+		return fmt.Errorf("navigating to URL: %w", err)
+	}
+
+	page.MustWaitLoad()
+
+	contentElement, err := page.Element(".chapter-content")
+	if err != nil {
+		return fmt.Errorf("finding content element: %w", err)
+	}
+
+	paragraphs, err := contentElement.Elements("p")
+	if err != nil {
+		return fmt.Errorf("finding paragraph elements: %w", err)
+	}
+
+	for _, p := range paragraphs {
+		text := strings.TrimSpace(p.MustText())
+		if text != "" {
+			contentBuilder.WriteString(text + "\n\n")
+		}
+	}
+
+	content := contentBuilder.String()
+	content = strings.ReplaceAll(content, "&ZeroWidthSpace;", "")
+
+	contentBuilder.Reset()
+	contentBuilder.WriteString(content)
 
 	return nil
 }
 
 func (c *Crawler) crawlLightNovelWorldChapterContent(pageURL string, contentBuilder *strings.Builder) error {
-	collector := c.newCollector()
-
-	collector.OnHTML(".chapter-content p", func(e *colly.HTMLElement) {
-		content := e.Text + "\n\n"
-		contentBuilder.WriteString(content)
-	})
-
-	err := collector.Visit(pageURL)
+	page, err := c.newPage()
 	if err != nil {
-		return fmt.Errorf("visiting chapter page: %w", err)
+		return fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
+
+	err = page.Navigate(pageURL)
+	if err != nil {
+		return fmt.Errorf("navigating to URL: %w", err)
+	}
+
+	page.MustWaitLoad()
+
+	paragraphs, err := page.Elements(".chapter-content p")
+	if err != nil {
+		return fmt.Errorf("finding paragraph elements: %w", err)
+	}
+
+	for _, p := range paragraphs {
+		text := strings.TrimSpace(p.MustText())
+		if text != "" {
+			contentBuilder.WriteString(text + "\n\n")
+		}
 	}
 
 	return nil
 }
 
 func (c *Crawler) crawl69shuChapterContent(pageURL string, contentBuilder *strings.Builder) error {
-	collector := c.newCollector()
-
-	collector.OnRequest(func(r *colly.Request) {
-		r.Headers.Set("Accept-Charset", "utf-8")
-	})
-	collector.OnResponse(func(r *colly.Response) {
-		utf8Body, err := convertToUTF8(r.Body, r.Headers.Get("Content-Type"))
-		if err != nil {
-			log.Printf("Error converting response body to UTF-8: %s", err)
-			return
-		}
-		r.Body = utf8Body
-	})
-
-	collector.OnHTML(".mybox", func(e *colly.HTMLElement) {
-		// First, try to find content within <p> tags
-		paragraphs := e.ChildTexts("p")
-		if len(paragraphs) > 0 {
-			for _, text := range paragraphs {
-				text = strings.TrimSpace(text)
-				if text != "" {
-					contentBuilder.WriteString(text + "\n\n")
-				}
-			}
-		} else {
-			// If no <p> tags, extract content directly from .txtnav
-			e.ForEach(".txtnav", func(_ int, el *colly.HTMLElement) {
-				content := el.Text
-				lines := strings.Split(content, "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if line != "" && !strings.Contains(line, "本章完") && !strings.Contains(line, "章节列表") {
-						contentBuilder.WriteString(line + "\n\n")
-					}
-				}
-			})
-		}
-	})
-
-	err := collector.Visit(pageURL)
+	page, err := c.newPage()
 	if err != nil {
-		return fmt.Errorf("visiting chapter page: %w", err)
+		return fmt.Errorf("creating new page: %w", err)
+	}
+	defer page.Close()
+
+	err = page.Navigate(pageURL)
+	if err != nil {
+		return fmt.Errorf("navigating to URL: %w", err)
+	}
+
+	page.MustWaitLoad()
+
+	contentElement, err := page.Element("#content")
+	if err != nil {
+		return fmt.Errorf("finding content element: %w", err)
+	}
+
+	content := contentElement.MustText()
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine != "" {
+			contentBuilder.WriteString(trimmedLine + "\n\n")
+		}
 	}
 
 	return nil
